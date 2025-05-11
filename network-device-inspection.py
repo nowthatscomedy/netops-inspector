@@ -13,6 +13,9 @@ import time
 import psutil
 import logging
 from pathlib import Path
+import sys
+import traceback
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 class NetworkInspector:
     def __init__(self, input_excel: str, output_excel: str):
@@ -21,6 +24,7 @@ class NetworkInspector:
         self.max_retries = 3  # 최대 재시도 횟수
         self.timeout = 10  # 연결 타임아웃 (초)
         self.max_memory_percent = 80  # 최대 메모리 사용량 제한 (%)
+        self.max_workers = min(10, (os.cpu_count() or 1) * 2)  # 최대 작업자 수
         self.setup_logging()
         self.devices = self._load_devices()
         self.results = []
@@ -36,48 +40,88 @@ class NetworkInspector:
         os.makedirs(log_dir, exist_ok=True)
         log_file = os.path.join(log_dir, f"network_inspector_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log")
         
+        # 로그 파일 크기 제한 (10MB)
+        file_handler = logging.FileHandler(log_file, encoding='utf-8')
+        file_handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
+        
+        # 로그 로테이션 설정
+        if os.path.exists(log_file) and os.path.getsize(log_file) > 10 * 1024 * 1024:  # 10MB
+            backup_log = f"{log_file}.{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+            os.rename(log_file, backup_log)
+        
         logging.basicConfig(
             level=logging.INFO,
             format='%(asctime)s - %(levelname)s - %(message)s',
             handlers=[
-                logging.FileHandler(log_file, encoding='utf-8'),
+                file_handler,
                 logging.StreamHandler()
             ]
         )
         self.logger = logging.getLogger(__name__)
 
     def _check_memory_usage(self):
-        """메모리 사용량을 확인합니다."""
-        memory_percent = psutil.Process().memory_percent()
-        if memory_percent > self.max_memory_percent:
-            self.logger.warning(f"High memory usage detected: {memory_percent}%")
+        """메모리 사용량을 확인하고 관리합니다."""
+        try:
+            memory_percent = psutil.Process().memory_percent()
+            if memory_percent > self.max_memory_percent:
+                self.logger.warning(f"High memory usage detected: {memory_percent}%")
+                # 메모리 정리 시도
+                import gc
+                gc.collect()
+                return False
+            return True
+        except Exception as e:
+            self.logger.error(f"Error checking memory usage: {str(e)}")
             return False
-        return True
 
     def _validate_excel_format(self, df: pd.DataFrame) -> Tuple[bool, str]:
         """엑셀 파일 형식을 검증합니다."""
-        required_columns = ['ip', 'vendor', 'model', 'version', 'connection_type', 'port', 'username', 'password']
-        
-        # 필수 컬럼 확인
-        missing_columns = [col for col in required_columns if col not in df.columns]
-        if missing_columns:
-            return False, f"Missing required columns: {', '.join(missing_columns)}"
-        
-        # 데이터 타입 확인
-        if not df['port'].apply(lambda x: isinstance(x, (int, float))).all():
-            return False, "Port numbers must be numeric"
-        
-        # 중복 IP 확인
-        if df['ip'].duplicated().any():
-            return False, "Duplicate IP addresses found"
-        
-        # 칼럼 이름을 소문자로 변환
-        df.columns = df.columns.str.lower()
-        
-        # 필요한 칼럼만 선택하고 순서 재정렬
-        df = df[required_columns]
-        
-        return True, ""
+        try:
+            required_columns = ['ip', 'vendor', 'model', 'version', 'connection_type', 'port', 'username', 'password']
+            
+            # 빈 데이터프레임 확인
+            if df.empty:
+                return False, "Excel file is empty"
+            
+            # 필수 컬럼 확인
+            missing_columns = [col for col in required_columns if col not in df.columns]
+            if missing_columns:
+                return False, f"Missing required columns: {', '.join(missing_columns)}"
+            
+            # 데이터 타입 확인
+            if not df['port'].apply(lambda x: isinstance(x, (int, float))).all():
+                return False, "Port numbers must be numeric"
+            
+            # 중복 IP 확인
+            if df['ip'].duplicated().any():
+                return False, "Duplicate IP addresses found"
+            
+            # 빈 값 확인
+            for col in required_columns:
+                if df[col].isna().any():
+                    return False, f"Empty values found in column: {col}"
+            
+            # IP 주소 형식 확인
+            invalid_ips = df[~df['ip'].apply(self._validate_ip)]
+            if not invalid_ips.empty:
+                return False, f"Invalid IP addresses found: {', '.join(invalid_ips['ip'].tolist())}"
+            
+            # 포트 번호 범위 확인
+            invalid_ports = df[~df['port'].apply(lambda x: 1 <= int(x) <= 65535)]
+            if not invalid_ports.empty:
+                return False, f"Invalid port numbers found: {', '.join(invalid_ports['port'].astype(str).tolist())}"
+            
+            # 칼럼 이름을 소문자로 변환
+            df.columns = df.columns.str.lower()
+            
+            # 필요한 칼럼만 선택하고 순서 재정렬
+            df = df[required_columns]
+            
+            return True, ""
+            
+        except Exception as e:
+            self.logger.error(f"Error validating Excel format: {str(e)}")
+            return False, f"Error validating Excel format: {str(e)}"
 
     def _validate_password(self, password: str) -> Tuple[bool, str]:
         """비밀번호 복잡도를 검증합니다."""
@@ -184,11 +228,26 @@ class NetworkInspector:
     def _connect_to_device(self, device: Dict) -> Tuple[Dict, Dict]:
         """장비에 연결하고 명령어를 실행합니다."""
         retry_count = 0
+        last_error = None
+        
+        # 세션 로그 파일 생성 (IP_벤더_모델_버전.log 형식)
+        session_log_file = os.path.join(
+            self.session_log_dir,
+            f"{device['ip']}_{device['vendor']}_{device['model']}_{device['version']}.log"
+        )
+        
         while retry_count < self.max_retries:
             try:
                 if not self._check_memory_usage():
                     self.logger.error("Memory usage exceeded limit")
                     return device, {"error": "Memory usage exceeded limit"}
+
+                # 세션 로그 시작
+                with open(session_log_file, 'a', encoding='utf-8') as log:
+                    log.write(f"\n{'='*50}\n")
+                    log.write(f"Connection attempt {retry_count + 1} at {datetime.now()}\n")
+                    log.write(f"Device: {device['ip']} ({device['vendor']} {device['model']} {device['version']})\n")
+                    log.write(f"{'='*50}\n\n")
 
                 connection_params = {
                     'device_type': f"{device['vendor']}_{device['model']}",
@@ -197,12 +256,9 @@ class NetworkInspector:
                     'password': device['password'],
                     'port': device['port'],
                     'secret': device.get('enable_password', ''),
-                    'timeout': self.timeout
+                    'timeout': self.timeout,
+                    'session_log': session_log_file
                 }
-                
-                # 장비별 세션 로그 디렉토리 생성
-                device_log_dir = os.path.join(self.session_log_dir, f"{device['ip']}_{device['vendor']}_{device['model']}")
-                os.makedirs(device_log_dir, exist_ok=True)
                 
                 with ConnectHandler(**connection_params) as conn:
                     # 점검 명령어 실행
@@ -216,13 +272,6 @@ class NetworkInspector:
                     for cmd in commands:
                         try:
                             output = conn.send_command(cmd)
-                            # 명령어별 세션 로그 저장
-                            log_filename = os.path.join(device_log_dir, f"{cmd.replace(' ', '_')}.txt")
-                            with open(log_filename, 'w', encoding='utf-8') as f:
-                                f.write(f"Command: {cmd}\n")
-                                f.write("="*50 + "\n")
-                                f.write(output)
-                            
                             parsed = self._parse_command_output(
                                 device['vendor'],
                                 device['model'],
@@ -245,7 +294,7 @@ class NetworkInspector:
                             backup_output = conn.send_command(backup_cmd)
                             backup_filename = os.path.join(
                                 self.backup_dir,
-                                f"{device['ip']}_{device['vendor']}_{device['model']}.txt"
+                                f"{device['ip']}_{device['vendor']}_{device['model']}_{device['version']}.txt"
                             )
                             with open(backup_filename, 'w', encoding='utf-8') as f:
                                 f.write(backup_output)
@@ -253,20 +302,38 @@ class NetworkInspector:
                             self.logger.error(f"Error backing up {device['ip']}: {str(e)}")
                             inspection_results["backup_error"] = str(e)
                     
+                    # 세션 로그 종료
+                    with open(session_log_file, 'a', encoding='utf-8') as log:
+                        log.write(f"\n{'='*50}\n")
+                        log.write(f"Session completed successfully at {datetime.now()}\n")
+                        log.write(f"{'='*50}\n\n")
+                    
                     return device, inspection_results
                     
             except Exception as e:
+                last_error = e
                 retry_count += 1
                 self.logger.warning(f"Attempt {retry_count} failed for {device['ip']}: {str(e)}")
+                
+                # 실패 로그 기록
+                with open(session_log_file, 'a', encoding='utf-8') as log:
+                    log.write(f"\n{'='*50}\n")
+                    log.write(f"Connection attempt {retry_count} failed at {datetime.now()}\n")
+                    log.write(f"Error: {str(e)}\n")
+                    log.write(f"{'='*50}\n\n")
+                
                 if retry_count < self.max_retries:
                     time.sleep(2 ** retry_count)  # 지수 백오프
                 else:
-                    error_log_dir = os.path.join(self.session_log_dir, f"{device['ip']}_{device['vendor']}_{device['model']}")
-                    os.makedirs(error_log_dir, exist_ok=True)
-                    error_log = os.path.join(error_log_dir, "error.log")
-                    with open(error_log, 'w', encoding='utf-8') as f:
-                        f.write(f"Error connecting to {device['ip']}: {str(e)}\n")
-                        f.write(f"Retry attempts: {retry_count}\n")
+                    # 최종 실패 로그 기록
+                    with open(session_log_file, 'a', encoding='utf-8') as log:
+                        log.write(f"\n{'='*50}\n")
+                        log.write(f"All connection attempts failed at {datetime.now()}\n")
+                        log.write(f"Last error: {str(last_error)}\n")
+                        log.write("Stack trace:\n")
+                        log.write(traceback.format_exc())
+                        log.write(f"\n{'='*50}\n\n")
+                    
                     self.logger.error(f"Failed to connect to {device['ip']} after {retry_count} attempts")
                     return device, {"error": str(e)}
 
@@ -328,36 +395,67 @@ class NetworkInspector:
     
     def inspect_devices(self):
         """모든 장비를 점검합니다."""
-        with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
-            future_to_device = {
-                executor.submit(self._connect_to_device, device): device
-                for device in self.devices
-            }
-            
-            for future in concurrent.futures.as_completed(future_to_device):
-                device, results = future.result()
-                # Lock을 사용하여 결과 저장
-                with self.results_lock:
-                    self.results.append({
-                        'IP': device['ip'],
-                        'Vendor': device['vendor'],
-                        'Model': device['model'],
-                        'Version': device['version'],
-                        **results
-                    })
-    
+        try:
+            with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
+                future_to_device = {
+                    executor.submit(self._connect_to_device, device): device
+                    for device in self.devices
+                }
+                
+                for future in as_completed(future_to_device):
+                    try:
+                        device, results = future.result()
+                        with self.results_lock:
+                            self.results.append({
+                                'IP': device['ip'],
+                                'Vendor': device['vendor'],
+                                'Model': device['model'],
+                                'Version': device['version'],
+                                **results
+                            })
+                    except Exception as e:
+                        self.logger.error(f"Error processing device {future_to_device[future]['ip']}: {str(e)}")
+                        with self.results_lock:
+                            self.results.append({
+                                'IP': future_to_device[future]['ip'],
+                                'Vendor': future_to_device[future]['vendor'],
+                                'Model': future_to_device[future]['model'],
+                                'Version': future_to_device[future]['version'],
+                                'error': str(e)
+                            })
+        except Exception as e:
+            self.logger.error(f"Error in inspect_devices: {str(e)}")
+            raise
+
     def save_results(self):
         """결과를 엑셀 파일에 저장합니다."""
-        df = pd.DataFrame(self.results)
-        df.to_excel(self.output_excel, index=False)
+        try:
+            df = pd.DataFrame(self.results)
+            
+            # 결과 파일이 이미 존재하는 경우 백업
+            if os.path.exists(self.output_excel):
+                backup_file = f"{self.output_excel}.{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+                os.rename(self.output_excel, backup_file)
+            
+            df.to_excel(self.output_excel, index=False)
+            self.logger.info(f"Results saved to {self.output_excel}")
+        except Exception as e:
+            self.logger.error(f"Error saving results: {str(e)}")
+            raise
 
 def main():
-    input_excel = "devices.xlsx"  # 입력 엑셀 파일
-    output_excel = "inspection_results.xlsx"  # 출력 엑셀 파일
-    
-    inspector = NetworkInspector(input_excel, output_excel)
-    inspector.inspect_devices()
-    inspector.save_results()
+    try:
+        input_excel = "devices.xlsx"  # 입력 엑셀 파일
+        output_excel = "inspection_results.xlsx"  # 출력 엑셀 파일
+        
+        inspector = NetworkInspector(input_excel, output_excel)
+        inspector.inspect_devices()
+        inspector.save_results()
+        
+    except Exception as e:
+        logging.error(f"Program execution failed: {str(e)}")
+        logging.error(traceback.format_exc())
+        sys.exit(1)
 
 if __name__ == "__main__":
     main() 
