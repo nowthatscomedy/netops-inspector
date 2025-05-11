@@ -123,20 +123,6 @@ class NetworkInspector:
             self.logger.error(f"Error validating Excel format: {str(e)}")
             return False, f"Error validating Excel format: {str(e)}"
 
-    def _validate_password(self, password: str) -> Tuple[bool, str]:
-        """비밀번호 복잡도를 검증합니다."""
-        if len(password) < 8:
-            return False, "Password must be at least 8 characters long"
-        if not re.search(r"[A-Z]", password):
-            return False, "Password must contain at least one uppercase letter"
-        if not re.search(r"[a-z]", password):
-            return False, "Password must contain at least one lowercase letter"
-        if not re.search(r"\d", password):
-            return False, "Password must contain at least one number"
-        if not re.search(r"[!@#$%^&*(),.?\":{}|<>]", password):
-            return False, "Password must contain at least one special character"
-        return True, ""
-
     def _validate_ip(self, ip: str) -> bool:
         """IP 주소 형식을 검증합니다."""
         try:
