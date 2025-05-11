@@ -23,8 +23,6 @@ class NetworkInspector:
         self.output_excel = output_excel
         self.max_retries = 3  # 최대 재시도 횟수
         self.timeout = 10  # 연결 타임아웃 (초)
-        self.max_memory_percent = 80  # 최대 메모리 사용량 제한 (%)
-        self.max_workers = min(10, (os.cpu_count() or 1) * 2)  # 최대 작업자 수
         self.setup_logging()
         self.devices = self._load_devices()
         self.results = []
@@ -58,21 +56,6 @@ class NetworkInspector:
             ]
         )
         self.logger = logging.getLogger(__name__)
-
-    def _check_memory_usage(self):
-        """메모리 사용량을 확인하고 관리합니다."""
-        try:
-            memory_percent = psutil.Process().memory_percent()
-            if memory_percent > self.max_memory_percent:
-                self.logger.warning(f"High memory usage detected: {memory_percent}%")
-                # 메모리 정리 시도
-                import gc
-                gc.collect()
-                return False
-            return True
-        except Exception as e:
-            self.logger.error(f"Error checking memory usage: {str(e)}")
-            return False
 
     def _validate_excel_format(self, df: pd.DataFrame) -> Tuple[bool, str]:
         """엑셀 파일 형식을 검증합니다."""
@@ -224,10 +207,6 @@ class NetworkInspector:
         
         while retry_count < self.max_retries:
             try:
-                if not self._check_memory_usage():
-                    self.logger.error("Memory usage exceeded limit")
-                    return device, {"error": "Memory usage exceeded limit"}
-
                 # 세션 로그 시작
                 with open(session_log_file, 'a', encoding='utf-8') as log:
                     log.write(f"\n{'='*50}\n")
@@ -382,7 +361,7 @@ class NetworkInspector:
     def inspect_devices(self):
         """모든 장비를 점검합니다."""
         try:
-            with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
+            with ThreadPoolExecutor() as executor:
                 future_to_device = {
                     executor.submit(self._connect_to_device, device): device
                     for device in self.devices
