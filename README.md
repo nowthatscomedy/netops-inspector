@@ -1,45 +1,104 @@
-# 네트워크 장비 점검 자동화 프로그램
+# Network Device Inspection
 
-이 프로그램은 여러 네트워크 장비에 동시에 접속하여 점검 명령어를 실행하고, 결과를 파싱하여 엑셀 파일로 저장하는 자동화 도구입니다.
+네트워크 장비 점검 및 설정 백업을 자동화하는 프로그램입니다.
 
 ## 주요 기능
 
-- 여러 네트워크 장비에 동시 접속
-- 벤더/모델/버전별 맞춤 명령어 실행
-- 명령어 결과 자동 파싱
-- 설정 백업 자동화
-- 결과를 엑셀 파일로 저장
+- 다중 장비 동시 점검
+- 장비별 설정 백업
+- 세션 로그 자동 저장
+- 엑셀 파일 기반 장비 정보 관리
+- 실패 시 자동 재시도 (지수 백오프 적용)
+- 메모리 사용량 모니터링
 
 ## 설치 방법
 
-1. 필요한 패키지 설치:
+1. 저장소 클론
+```bash
+git clone https://github.com/ch0c0l8/network-device-inspection.git
+cd network-device-inspection
+```
+
+2. 필요한 패키지 설치
 ```bash
 pip install -r requirements.txt
 ```
 
-2. 입력 엑셀 파일(`devices.xlsx`) 준비:
-   - 벤더사
-   - 모델명
-   - 버전
-   - 장비IP
-   - 접속방식(ssh/telnet)
-   - port
-   - username
-   - password
-   - enable password(선택)
-
 ## 사용 방법
 
-1. `devices.xlsx` 파일에 점검할 장비 정보를 입력합니다.
-2. 프로그램을 실행합니다:
+1. 장비 정보 입력
+   - `devices.xlsx` 파일에 장비 정보 입력
+   - 필수 컬럼: ip, vendor, model, version, connection_type, port, username, password
+   - 칼럼 순서는 상관없음 (대소문자 구분 없음)
+
+2. 프로그램 실행
 ```bash
-python network_inspector.py
+python network-device-inspection.py
 ```
-3. 결과는 `inspection_results.xlsx` 파일에 저장됩니다.
-4. 설정 백업 파일은 `backup_[IP]_[timestamp].txt` 형식으로 저장됩니다.
+
+3. 결과 확인
+   - 점검 결과: `inspection_results.xlsx`
+   - 설정 백업: `backup_YYYYMMDD_HHMMSS/` 디렉토리
+   - 세션 로그: `session_logs_YYYYMMDD_HHMMSS/` 디렉토리
+
+## 로그 파일 구조
+
+```
+session_logs_YYYYMMDD_HHMMSS/
+├── 192.168.1.1_cisco_2960_15.0.log
+├── 192.168.1.2_cisco_3850_16.9.log
+└── 192.168.1.3_hp_5120_7.1.log
+```
+
+## 주요 특징
+
+1. **데이터 검증**
+   - 엑셀 파일 형식 검증
+   - IP 주소 형식 검증
+   - 포트 번호 범위 검증 (1-65535)
+   - 빈 값 및 중복 데이터 검증
+
+2. **에러 처리**
+   - 연결 실패 시 최대 3번 재시도
+   - 지수 백오프 적용 (2초 → 4초 → 8초)
+   - 상세한 에러 로그 기록
+
+3. **리소스 관리**
+   - 메모리 사용량 모니터링
+   - CPU 코어 수에 따른 최적 작업자 수 설정
+   - 로그 파일 크기 제한 (10MB)
+
+4. **로그 관리**
+   - 장비별 통합 세션 로그
+   - 시간순 정렬된 로그 기록
+   - 로그 파일 자동 로테이션
+
+## 지원하는 장비
+
+- Cisco 장비
+- HP 장비
+- 기타 Netmiko에서 지원하는 장비
 
 ## 주의사항
 
-- 장비 접속 정보는 안전하게 관리해야 합니다.
-- 대량의 장비를 동시에 점검할 경우 네트워크 부하를 고려해야 합니다.
-- 새로운 장비 타입을 추가하려면 `device_commands.py` 파일을 수정해야 합니다. 
+1. 장비 정보 입력 시
+   - IP 주소는 유효한 형식이어야 함
+   - 포트 번호는 1-65535 범위 내
+   - 벤더/모델/버전은 지원되는 조합이어야 함
+
+2. 프로그램 실행 시
+   - 충분한 디스크 공간 확보
+   - 네트워크 연결 상태 확인
+   - 방화벽 설정 확인
+
+## 라이선스
+
+MIT License
+
+## 기여 방법
+
+1. Fork the Project
+2. Create your Feature Branch
+3. Commit your Changes
+4. Push to the Branch
+5. Open a Pull Request 
