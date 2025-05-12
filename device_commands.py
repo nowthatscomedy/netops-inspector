@@ -29,6 +29,12 @@ INSPECTION_COMMANDS = {
             'show ip interface brief',
             'show running-config'
         ]
+    },
+    'axgate': {
+        'axgate-80d': [
+            'show system version',
+            'show running-config'
+        ]
     }
 }
 
@@ -43,6 +49,9 @@ BACKUP_COMMANDS = {
     },
     'ubiquoss': {
         'e4020': 'show running-config'
+    },
+    'axgate': {
+        'axgate-80d': 'show running-config'
     }
 }
 
@@ -68,7 +77,18 @@ PARSING_RULES = {
             },
             'show ip interface brief': {
                 'pattern': r'(\S+)\s+(?:\d+\.\d+\.\d+\.\d+|unassigned)\s+up\s+up',
-                'output_column': 'Up Interfaces'
+                'output_column': 'Connected Interfaces'
+            }
+        }
+    },
+    'axgate': {
+        'axgate-80d': {
+            'show system version': {
+                'pattern': r'OS:\s+(aos v[^\r\n]+)',
+                'output_column': 'Version'
+            },
+            'show running-config': {
+                'output_column': 'Configuration'
             }
         }
     }
