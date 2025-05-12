@@ -25,8 +25,8 @@ netmiko_logger.setLevel(logging.DEBUG)
 # 파일 핸들러 추가
 file_handler = logging.FileHandler('netmiko_debug.log')
 file_handler.setLevel(logging.DEBUG)
-# 포맷터 설정
-formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+# 포맷터 설정 - 쓰레드 정보 추가
+formatter = logging.Formatter('%(asctime)s - [%(threadName)s] - %(name)s - %(levelname)s - %(message)s')
 file_handler.setFormatter(formatter)
 netmiko_logger.addHandler(file_handler)
 
@@ -47,6 +47,7 @@ class NetworkInspector:
         self.devices = self._load_devices()
         self.results = []
         self.results_lock = threading.Lock()
+        self.log_lock = threading.Lock()
         
     def setup_logging(self):
         """로깅 설정을 초기화합니다."""
@@ -54,9 +55,9 @@ class NetworkInspector:
         os.makedirs(log_dir, exist_ok=True)
         log_file = os.path.join(log_dir, f"network_inspector_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log")
         
-        # 로그 파일 핸들러 설정
+        # 로그 파일 핸들러 설정 - 쓰레드 식별정보 추가
         file_handler = logging.FileHandler(log_file, encoding='utf-8')
-        file_handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
+        file_handler.setFormatter(logging.Formatter('%(asctime)s - [%(threadName)s] - %(levelname)s - %(message)s'))
         
         # 로거 설정
         self.logger = logging.getLogger(__name__)
@@ -69,9 +70,9 @@ class NetworkInspector:
         # 새로운 핸들러 추가
         self.logger.addHandler(file_handler)
         
-        # 콘솔 출력을 위한 핸들러 추가
+        # 콘솔 출력을 위한 핸들러 추가 - 쓰레드 식별정보 추가
         console_handler = logging.StreamHandler()
-        console_handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
+        console_handler.setFormatter(logging.Formatter('%(asctime)s - [%(threadName)s] - %(levelname)s - %(message)s'))
         self.logger.addHandler(console_handler)
         
         self.logger.info("로깅 초기화 완료")
@@ -268,6 +269,9 @@ class NetworkInspector:
 
     def _connect_to_device(self, device: Dict) -> Tuple[Dict, Dict]:
         """장비에 연결하고 명령어를 실행합니다."""
+        # 쓰레드 이름을 장비 IP로 설정하여 로그에서 구분 가능하게 함
+        threading.current_thread().name = f"Device-{device['ip']}"
+        
         retry_count = 0
         last_error = None
         
@@ -514,11 +518,20 @@ class NetworkInspector:
     def inspect_devices(self):
         """모든 장비를 점검합니다."""
         try:
-            with ThreadPoolExecutor() as executor:
+            # 장비 수에 따라 최대 쓰레드 수 제한 (CPU 코어 수의 2배 이내로 제한)
+            max_workers = min(len(self.devices), os.cpu_count() * 2 or 8)
+            self.logger.info(f"멀티쓰레드 작업 시작: 장비 {len(self.devices)}개, 최대 쓰레드 {max_workers}개")
+            
+            with ThreadPoolExecutor(max_workers=max_workers) as executor:
+                # 병렬 처리를 위한 future 생성
                 future_to_device = {
                     executor.submit(self._connect_to_device, device): device
                     for device in self.devices
                 }
+                
+                # 완료된 작업 처리
+                completed = 0
+                total = len(future_to_device)
                 
                 for future in as_completed(future_to_device):
                     try:
@@ -530,6 +543,11 @@ class NetworkInspector:
                                 'Model': device['model'],
                                 **results
                             })
+                        
+                        # 진행 상황 업데이트
+                        completed += 1
+                        with self.log_lock:
+                            self.logger.info(f"진행 상황: {completed}/{total} (IP: {device['ip']} 완료)")
                     except Exception as e:
                         self.logger.error(f"장비 처리 중 오류 발생 ({future_to_device[future]['ip']}): {str(e)}")
                         with self.results_lock:
@@ -539,6 +557,13 @@ class NetworkInspector:
                                 'Model': future_to_device[future]['model'],
                                 'error': str(e)
                             })
+                        
+                        # 실패 상황 업데이트
+                        completed += 1
+                        with self.log_lock:
+                            self.logger.info(f"진행 상황: {completed}/{total} (IP: {future_to_device[future]['ip']} 실패)")
+            
+            self.logger.info(f"멀티쓰레드 작업 완료: 총 {len(self.results)}개 장비 처리됨")
         except Exception as e:
             self.logger.error(f"장비 점검 중 오류 발생: {str(e)}")
             raise
