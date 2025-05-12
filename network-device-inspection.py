@@ -33,11 +33,14 @@ netmiko_logger.addHandler(file_handler)
 class NetworkInspector:
     def __init__(self, input_excel: str, output_excel: str):
         self.input_excel = input_excel
-        self.output_excel = output_excel
+        # 출력 파일명에 타임스탬프 추가
+        file_name, file_ext = os.path.splitext(output_excel)
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        self.output_excel = f"{file_name}_{timestamp}{file_ext}"
         self.max_retries = 3  # 최대 재시도 횟수
         self.timeout = 10  # 연결 타임아웃 (초)
         self.setup_logging()
-        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        # 동일한 타임스탬프 사용
         self.backup_dir = os.path.join("backup", timestamp)
         self.session_log_dir = os.path.join("session_logs", timestamp)
         os.makedirs("backup", exist_ok=True)
@@ -573,14 +576,7 @@ class NetworkInspector:
         try:
             df = pd.DataFrame(self.results)
             
-            # 결과 파일이 이미 존재하는 경우 백업
-            if os.path.exists(self.output_excel):
-                # 파일명과 확장자 분리
-                file_name, file_ext = os.path.splitext(self.output_excel)
-                # 백업 파일명 생성 (파일명_타임스탬프.확장자)
-                backup_file = f"{file_name}_{datetime.now().strftime('%Y%m%d_%H%M%S')}{file_ext}"
-                os.rename(self.output_excel, backup_file)
-            
+            # 결과 파일 저장 (이미 타임스탬프가 포함되어 있음)
             df.to_excel(self.output_excel, index=False)
             self.logger.info(f"결과가 저장되었습니다: {self.output_excel}")
         except Exception as e:
@@ -590,7 +586,7 @@ class NetworkInspector:
 def main():
     try:
         input_excel = "devices.xlsx"  # 입력 엑셀 파일
-        output_excel = "inspection_results.xlsx"  # 출력 엑셀 파일
+        output_excel = "inspection_results.xlsx"  # 기본 출력 엑셀 파일명 (타임스탬프는 클래스 내부에서 추가됨)
         
         inspector = NetworkInspector(input_excel, output_excel)
         inspector.inspect_devices()
