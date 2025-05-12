@@ -42,7 +42,7 @@ pip install -r requirements.txt
 ## 사용 방법
 
 1. `devices.xlsx` 파일에 장비 정보 입력
-   - 필수 컬럼: ip, vendor, model, version, connection_type, port, username, password
+   - 필수 컬럼: ip, vendor, model, connection_type, port, username, password
    - connection_type: ssh 또는 telnet
    - port: SSH(22) 또는 Telnet(23)의 기본 포트 사용 가능, 그 외 포트는 1024-65535 범위 내에서 지정
 
@@ -80,14 +80,14 @@ python network-device-inspection.py
    - 포트 번호 범위 검증
 
 2. 장비 정보 검증
-   - 지원되는 벤더/모델/버전 조합 확인
+   - 지원되는 벤더/모델 조합 확인
    - 접속 방식(ssh/telnet) 검증
    - 포트 번호 검증
 
 ## 로그 파일
 
 1. 세션 로그 (`session_logs/YYYYMMDD_HHMMSS/`)
-   - 파일명: `IP_vendor_model_version.log`
+   - 파일명: `IP_vendor_model.log`
    - 연결 시도 및 명령어 실행 기록
    - 오류 발생 시 상세 정보 기록
 
@@ -102,6 +102,8 @@ python network-device-inspection.py
   - IOS-XE
 - Juniper
   - JunOS
+- Ubiquoss
+  - E4020
 
 ## 라이선스
 
