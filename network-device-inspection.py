@@ -10,12 +10,14 @@ import threading
 import ipaddress
 import socket
 import time
-import psutil
 import logging
 from pathlib import Path
 import sys
 import traceback
 from concurrent.futures import ThreadPoolExecutor, as_completed
+
+# Netmiko 디버그 로그 활성화
+logging.basicConfig(filename='netmiko_debug.log', level=logging.DEBUG)
 
 class NetworkInspector:
     def __init__(self, input_excel: str, output_excel: str):
@@ -24,13 +26,16 @@ class NetworkInspector:
         self.max_retries = 3  # 최대 재시도 횟수
         self.timeout = 10  # 연결 타임아웃 (초)
         self.setup_logging()
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        self.backup_dir = os.path.join("backup", timestamp)
+        self.session_log_dir = os.path.join("session_logs", timestamp)
+        os.makedirs("backup", exist_ok=True)
+        os.makedirs("session_logs", exist_ok=True)
+        os.makedirs(self.backup_dir, exist_ok=True)
+        os.makedirs(self.session_log_dir, exist_ok=True)
         self.devices = self._load_devices()
         self.results = []
         self.results_lock = threading.Lock()
-        self.backup_dir = f"backup_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
-        self.session_log_dir = f"session_logs_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
-        os.makedirs(self.backup_dir, exist_ok=True)
-        os.makedirs(self.session_log_dir, exist_ok=True)
         
     def setup_logging(self):
         """로깅 설정을 초기화합니다."""
@@ -38,24 +43,27 @@ class NetworkInspector:
         os.makedirs(log_dir, exist_ok=True)
         log_file = os.path.join(log_dir, f"network_inspector_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log")
         
-        # 로그 파일 크기 제한 (10MB)
+        # 로그 파일 핸들러 설정
         file_handler = logging.FileHandler(log_file, encoding='utf-8')
         file_handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
         
-        # 로그 로테이션 설정
-        if os.path.exists(log_file) and os.path.getsize(log_file) > 10 * 1024 * 1024:  # 10MB
-            backup_log = f"{log_file}.{datetime.now().strftime('%Y%m%d_%H%M%S')}"
-            os.rename(log_file, backup_log)
-        
-        logging.basicConfig(
-            level=logging.INFO,
-            format='%(asctime)s - %(levelname)s - %(message)s',
-            handlers=[
-                file_handler,
-                logging.StreamHandler()
-            ]
-        )
+        # 로거 설정
         self.logger = logging.getLogger(__name__)
+        self.logger.setLevel(logging.INFO)
+        
+        # 기존 핸들러 제거
+        for handler in self.logger.handlers[:]:
+            self.logger.removeHandler(handler)
+        
+        # 새로운 핸들러 추가
+        self.logger.addHandler(file_handler)
+        
+        # 콘솔 출력을 위한 핸들러 추가
+        console_handler = logging.StreamHandler()
+        console_handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
+        self.logger.addHandler(console_handler)
+        
+        self.logger.info("Logging initialized")
 
     def _validate_excel_format(self, df: pd.DataFrame) -> Tuple[bool, str]:
         """엑셀 파일 형식을 검증합니다."""
@@ -140,6 +148,11 @@ class NetworkInspector:
             if field not in device or not device[field]:
                 return False, f"Missing required field: {field}"
 
+        # 소문자 변환
+        vendor = str(device['vendor']).lower()
+        model = str(device['model']).lower()
+        version = str(device['version']).lower()
+
         # IP 주소 검증
         if not self._validate_ip(device['ip']):
             return False, f"Invalid IP address: {device['ip']}"
@@ -154,11 +167,11 @@ class NetworkInspector:
 
         # 벤더/모델/버전 검증
         try:
-            if device['vendor'].lower() not in INSPECTION_COMMANDS:
+            if vendor not in INSPECTION_COMMANDS:
                 return False, f"Unsupported vendor: {device['vendor']}"
-            if device['model'].lower() not in INSPECTION_COMMANDS[device['vendor'].lower()]:
+            if model not in INSPECTION_COMMANDS[vendor]:
                 return False, f"Unsupported model for {device['vendor']}: {device['model']}"
-            if device['version'] not in INSPECTION_COMMANDS[device['vendor'].lower()][device['model'].lower()]:
+            if version not in INSPECTION_COMMANDS[vendor][model]:
                 return False, f"Unsupported version for {device['vendor']} {device['model']}: {device['version']}"
         except KeyError:
             return False, f"Invalid device configuration: {device['vendor']} {device['model']} {device['version']}"
@@ -168,15 +181,29 @@ class NetworkInspector:
     def _get_device_commands(self, vendor: str, model: str, version: str) -> List[str]:
         """장비별 점검 명령어를 가져옵니다."""
         try:
-            return INSPECTION_COMMANDS[vendor.lower()][model.lower()][version]
-        except KeyError:
+            v = str(vendor).strip().lower()
+            m = str(model).strip().lower()
+            ver = str(version).strip().lower()
+            cmds = INSPECTION_COMMANDS.get(v, {}).get(m, {}).get(ver, [])
+            if not cmds:
+                self.logger.warning(f"No inspection commands found for {v} {m} {ver}")
+            return cmds
+        except Exception as e:
+            self.logger.error(f"Error getting device commands: {str(e)}")
             return []
     
     def _get_backup_command(self, vendor: str, model: str, version: str) -> str:
         """장비별 백업 명령어를 가져옵니다."""
         try:
-            return BACKUP_COMMANDS[vendor.lower()][model.lower()][version]
-        except KeyError:
+            v = str(vendor).strip().lower()
+            m = str(model).strip().lower()
+            ver = str(version).strip().lower()
+            cmd = BACKUP_COMMANDS.get(v, {}).get(m, {}).get(ver, '')
+            if not cmd:
+                self.logger.warning(f"No backup command found for {v} {m} {ver}")
+            return cmd
+        except Exception as e:
+            self.logger.error(f"Error getting backup command: {str(e)}")
             return ""
     
     def _parse_command_output(self, vendor: str, model: str, command: str, output: str) -> Dict:
@@ -214,8 +241,17 @@ class NetworkInspector:
                     log.write(f"Device: {device['ip']} ({device['vendor']} {device['model']} {device['version']})\n")
                     log.write(f"{'='*50}\n\n")
 
+                # 장비 타입 설정
+                if device['connection_type'].lower() == 'telnet':
+                    if device['vendor'].lower() == 'cisco' and device['model'].lower() == 'ios':
+                        device_type = 'cisco_ios_telnet'
+                    else:
+                        device_type = f"{device['vendor']}_{device['model']}_telnet"
+                else:
+                    device_type = f"{device['vendor']}_{device['model']}"
+
                 connection_params = {
-                    'device_type': f"{device['vendor']}_{device['model']}",
+                    'device_type': device_type,
                     'host': device['ip'],
                     'username': device['username'],
                     'password': device['password'],
@@ -226,6 +262,12 @@ class NetworkInspector:
                 }
                 
                 with ConnectHandler(**connection_params) as conn:
+                    # enable 모드 진입
+                    try:
+                        conn.enable()
+                    except Exception as e:
+                        self.logger.warning(f"Failed to enter enable mode on {device['ip']}: {str(e)}")
+                    
                     # 점검 명령어 실행
                     inspection_results = {}
                     commands = self._get_device_commands(
@@ -236,7 +278,20 @@ class NetworkInspector:
                     
                     for cmd in commands:
                         try:
-                            output = conn.send_command(cmd)
+                            # 명령어 실행 전 로그
+                            with open(session_log_file, 'a', encoding='utf-8') as log:
+                                log.write(f"\nExecuting command: {cmd}\n")
+                                log.write("-"*50 + "\n")
+                            
+                            # 명령어 실행
+                            output = conn.send_command(cmd, read_timeout=30)
+                            
+                            # 명령어 실행 결과 로그
+                            with open(session_log_file, 'a', encoding='utf-8') as log:
+                                log.write(f"Output:\n{output}\n")
+                                log.write("-"*50 + "\n")
+                            
+                            # 결과 파싱
                             parsed = self._parse_command_output(
                                 device['vendor'],
                                 device['model'],
@@ -256,13 +311,27 @@ class NetworkInspector:
                     )
                     if backup_cmd:
                         try:
-                            backup_output = conn.send_command(backup_cmd)
+                            # 백업 명령어 실행 전 로그
+                            with open(session_log_file, 'a', encoding='utf-8') as log:
+                                log.write(f"\nExecuting backup command: {backup_cmd}\n")
+                                log.write("-"*50 + "\n")
+                            
+                            # 백업 명령어 실행
+                            backup_output = conn.send_command(backup_cmd, read_timeout=60)
+                            
+                            # 백업 명령어 실행 결과 로그
+                            with open(session_log_file, 'a', encoding='utf-8') as log:
+                                log.write(f"Backup output:\n{backup_output}\n")
+                                log.write("-"*50 + "\n")
+                            
+                            # 백업 파일 저장
                             backup_filename = os.path.join(
                                 self.backup_dir,
                                 f"{device['ip']}_{device['vendor']}_{device['model']}_{device['version']}.txt"
                             )
                             with open(backup_filename, 'w', encoding='utf-8') as f:
                                 f.write(backup_output)
+                            self.logger.info(f"Backup saved to {backup_filename}")
                         except Exception as e:
                             self.logger.error(f"Error backing up {device['ip']}: {str(e)}")
                             inspection_results["backup_error"] = str(e)
@@ -399,7 +468,10 @@ class NetworkInspector:
             
             # 결과 파일이 이미 존재하는 경우 백업
             if os.path.exists(self.output_excel):
-                backup_file = f"{self.output_excel}.{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+                # 파일명과 확장자 분리
+                file_name, file_ext = os.path.splitext(self.output_excel)
+                # 백업 파일명 생성 (파일명_타임스탬프.확장자)
+                backup_file = f"{file_name}_{datetime.now().strftime('%Y%m%d_%H%M%S')}{file_ext}"
                 os.rename(self.output_excel, backup_file)
             
             df.to_excel(self.output_excel, index=False)

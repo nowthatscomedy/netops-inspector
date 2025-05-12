@@ -24,6 +24,7 @@ wheels/
 # Virtual Environment
 venv/
 ENV/
+.venv/
 
 # IDE
 .idea/
@@ -34,8 +35,11 @@ ENV/
 # Project specific
 devices.xlsx
 inspection_results.xlsx
-backup_*.txt
+backup/
+session_logs/
+logs/
 .env
 
 # Logs
-*.log 
+*.log
+netmiko_debug.log 

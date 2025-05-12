@@ -53,9 +53,23 @@ python network-device-inspection.py
 
 3. 결과 확인
    - `inspection_results.xlsx`: 점검 결과
-   - `backup_YYYYMMDD_HHMMSS/`: 설정 백업 파일
-   - `session_logs_YYYYMMDD_HHMMSS/`: 세션 로그 파일
+   - `backup/YYYYMMDD_HHMMSS/`: 설정 백업 파일
+   - `session_logs/YYYYMMDD_HHMMSS/`: 세션 로그 파일
    - `logs/`: 프로그램 실행 로그
+
+## 디렉토리 구조
+
+```
+.
+├── backup/                    # 설정 백업 파일 저장
+│   └── YYYYMMDD_HHMMSS/      # 실행별 백업 폴더
+├── session_logs/             # 세션 로그 저장
+│   └── YYYYMMDD_HHMMSS/      # 실행별 세션 로그 폴더
+├── logs/                     # 프로그램 로그 저장
+├── devices.xlsx              # 장비 정보 입력 파일
+├── inspection_results.xlsx   # 점검 결과 파일
+└── network-device-inspection.py  # 메인 프로그램
+```
 
 ## 입력 데이터 검증
 
@@ -72,7 +86,7 @@ python network-device-inspection.py
 
 ## 로그 파일
 
-1. 세션 로그 (`session_logs_YYYYMMDD_HHMMSS/`)
+1. 세션 로그 (`session_logs/YYYYMMDD_HHMMSS/`)
    - 파일명: `IP_vendor_model_version.log`
    - 연결 시도 및 명령어 실행 기록
    - 오류 발생 시 상세 정보 기록
@@ -80,20 +94,14 @@ python network-device-inspection.py
 2. 프로그램 로그 (`logs/`)
    - 파일명: `network_inspector_YYYYMMDD_HHMMSS.log`
    - 프로그램 실행 상태 및 오류 기록
-   - 로그 파일 크기 10MB 초과 시 자동 백업
 
 ## 지원하는 장비
 
 - Cisco
   - IOS
   - IOS-XE
-  - NX-OS
 - Juniper
   - JunOS
-- Huawei
-  - VRP
-- H3C
-  - Comware
 
 ## 라이선스
 
