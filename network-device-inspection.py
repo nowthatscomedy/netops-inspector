@@ -16,6 +16,7 @@ import sys
 import traceback
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import subprocess
+import telnetlib
 
 # Netmiko 디버그 로그 활성화
 logging.basicConfig(filename='netmiko_debug.log', level=logging.DEBUG)
@@ -303,6 +304,7 @@ class NetworkInspector:
                     if device['vendor'].lower() == 'cisco' and device['model'].lower() == 'ios':
                         device_type = 'cisco_ios_telnet'
                     elif device['vendor'].lower() == 'ubiquoss' and device['model'].lower() == 'e4020':
+                        # 유비쿼스 장비는 Telnet 접속 시 특별 처리가 필요하므로 generic_telnet 사용
                         device_type = 'generic_telnet'
                     else:
                         device_type = f"{device['vendor']}_{device['model']}_telnet"
@@ -312,6 +314,148 @@ class NetworkInspector:
                     else:
                         device_type = f"{device['vendor']}_{device['model']}"
 
+                # 유비쿼스 E4020 Telnet 접속 특별 처리
+                if device['vendor'].lower() == 'ubiquoss' and device['model'].lower() == 'e4020' and device['connection_type'].lower() == 'telnet':
+                    self.logger.debug(f"유비쿼스 장비 Telnet 접속 시작: {device['ip']}")
+                    
+                    # Telnet 직접 구현 (username/password 프롬프트 처리)
+                    try:
+                        tn = telnetlib.Telnet(device['ip'], port=device['port'], timeout=self.timeout)
+                        
+                        # Username 입력
+                        tn.read_until(b"Username:", timeout=10)
+                        tn.write(device['username'].encode('ascii') + b"\n")
+                        time.sleep(1)
+                        
+                        # Password 입력
+                        tn.read_until(b"Password:", timeout=10)
+                        tn.write(device['password'].encode('ascii') + b"\n")
+                        time.sleep(2)
+                        
+                        # Enable 모드 진입
+                        output = tn.read_very_eager().decode('ascii')
+                        with open(session_log_file, 'a', encoding='utf-8') as log:
+                            log.write(f"로그인 후 출력:\n{output}\n")
+                            log.write("-"*50 + "\n")
+                        
+                        tn.write(b"enable\n")
+                        time.sleep(1)
+                        
+                        # Enable 비밀번호 입력 (있는 경우)
+                        if device.get('enable_password'):
+                            tn.read_until(b"Password:", timeout=10)
+                            tn.write(device['enable_password'].encode('ascii') + b"\n")
+                            time.sleep(2)
+                        
+                        # terminal length 0 명령어 실행 (스크롤 없이 전체 출력)
+                        tn.write(b"terminal length 0\n")
+                        time.sleep(1)
+                        output = tn.read_very_eager().decode('ascii')
+                        with open(session_log_file, 'a', encoding='utf-8') as log:
+                            log.write(f"terminal length 0 명령어 실행 결과:\n{output}\n")
+                            log.write("-"*50 + "\n")
+                        
+                        # 명령어 실행
+                        inspection_results = {}
+                        commands = self._get_device_commands(
+                            device['vendor'],
+                            device['model']
+                        )
+                        
+                        for cmd in commands:
+                            try:
+                                # 명령어 실행 전 로그
+                                with open(session_log_file, 'a', encoding='utf-8') as log:
+                                    log.write(f"\n명령어 실행: {cmd}\n")
+                                    log.write("-"*50 + "\n")
+                                
+                                # 명령어 실행
+                                tn.write(cmd.encode('ascii') + b"\n")
+                                time.sleep(3)  # 명령어 실행 결과 기다림
+                                output = tn.read_very_eager().decode('ascii')
+                                
+                                # 명령어 실행 결과 로그
+                                with open(session_log_file, 'a', encoding='utf-8') as log:
+                                    log.write(f"출력:\n{output}\n")
+                                    log.write("-"*50 + "\n")
+                                
+                                # 결과 파싱
+                                parsed = self._parse_command_output(
+                                    device['vendor'],
+                                    device['model'],
+                                    cmd,
+                                    output
+                                )
+                                inspection_results.update(parsed)
+                            except Exception as e:
+                                self.logger.error(f"명령어 실행 실패 ({cmd} - {device['ip']}): {str(e)}")
+                                inspection_results[f"error_{cmd}"] = str(e)
+                        
+                        # 설정 백업
+                        backup_cmd = self._get_backup_command(
+                            device['vendor'],
+                            device['model']
+                        )
+                        if backup_cmd:
+                            try:
+                                # 백업 명령어 실행 전 로그
+                                with open(session_log_file, 'a', encoding='utf-8') as log:
+                                    log.write(f"\n백업 명령어 실행: {backup_cmd}\n")
+                                    log.write("-"*50 + "\n")
+                                
+                                # 백업 명령어 실행
+                                tn.write(backup_cmd.encode('ascii') + b"\n")
+                                time.sleep(10)  # 백업 명령어는 더 긴 시간 기다림
+                                backup_output = tn.read_very_eager().decode('ascii')
+                                
+                                # 백업 명령어 실행 결과 로그
+                                with open(session_log_file, 'a', encoding='utf-8') as log:
+                                    log.write(f"백업 출력:\n{backup_output}\n")
+                                    log.write("-"*50 + "\n")
+                                
+                                # 백업 파일 저장
+                                backup_filename = os.path.join(
+                                    self.backup_dir,
+                                    f"{device['ip']}_{device['vendor']}_{device['model']}.txt"
+                                )
+                                with open(backup_filename, 'w', encoding='utf-8') as f:
+                                    f.write(backup_output)
+                                self.logger.info(f"백업 파일 저장 완료: {backup_filename}")
+                            except Exception as e:
+                                self.logger.error(f"백업 실패 ({device['ip']}): {str(e)}")
+                                inspection_results["backup_error"] = str(e)
+                        
+                        # 세션 종료
+                        tn.write(b"exit\n")
+                        tn.close()
+                        
+                        # 세션 로그 종료
+                        with open(session_log_file, 'a', encoding='utf-8') as log:
+                            log.write(f"\n{'='*50}\n")
+                            log.write(f"세션 완료 - {datetime.now()}\n")
+                            log.write(f"{'='*50}\n\n")
+                        
+                        return device, inspection_results
+                    
+                    except Exception as e:
+                        self.logger.error(f"유비쿼스 Telnet 접속 실패 ({device['ip']}): {str(e)}")
+                        retry_count += 1
+                        last_error = e
+                        
+                        # 실패 로그 기록
+                        with open(session_log_file, 'a', encoding='utf-8') as log:
+                            log.write(f"\n{'='*50}\n")
+                            log.write(f"유비쿼스 Telnet 접속 실패 ({retry_count}) - {datetime.now()}\n")
+                            log.write(f"오류: {str(e)}\n")
+                            log.write(f"{'='*50}\n\n")
+                        
+                        if retry_count < self.max_retries:
+                            time.sleep(2 ** retry_count)  # 지수 백오프
+                            continue
+                        else:
+                            return device, {"error": f"유비쿼스 Telnet 접속 실패: {str(e)}"}
+
+                # 일반 장비 접속 (Netmiko 사용)
                 connection_params = {
                     'device_type': device_type,
                     'host': device['ip'],
@@ -325,38 +469,38 @@ class NetworkInspector:
                 }
 
                 with ConnectHandler(**connection_params) as conn:
-                    # Ubiquoss E4020의 경우 프롬프트 패턴 지정
-                    if device['vendor'].lower() == 'ubiquoss' and device['model'].lower() == 'e4020':
+                    # Ubiquoss E4020의 경우 프롬프트 패턴 지정 (SSH 접속 시)
+                    if device['vendor'].lower() == 'ubiquoss' and device['model'].lower() == 'e4020' and device['connection_type'].lower() == 'ssh':
                         conn.expect_string = r'[>#]'
                     
                     # enable 모드 진입
                     try:
-                        if device['vendor'].lower() == 'ubiquoss':
+                        if device['vendor'].lower() == 'ubiquoss' and device['connection_type'].lower() == 'ssh':
                             # 로그인 후 프롬프트 대기
                             prompt = conn.find_prompt()
                             self.logger.debug(f"초기 프롬프트: {prompt}")
                             
                             if device.get('enable_password'):
                                 enable_pwd = device['enable_password'].strip()
-                                time.sleep(3)  # 초기 대기 시간
-                                
-                                # 엔터를 여러 번 입력
-                                for _ in range(3):
-                                    conn.write_channel('\n')
-                                    time.sleep(0.5)
+                                time.sleep(1)
                                 output = conn.send_command_timing('enable')
-                                time.sleep(2)
+                                time.sleep(1)
                                 output = conn.send_command_timing(enable_pwd + '\n')
-                                time.sleep(3)
+                                time.sleep(1)
                                 prompt = conn.find_prompt()
                                 if prompt.strip().endswith('#'):
                                     self.logger.info(f"Enable 모드 진입 성공 ({device['ip']})")
+                                    # enable 모드 진입 성공 시 terminal length 0 실행
+                                    output = conn.send_command_timing('terminal length 0')
+                                    self.logger.debug(f"terminal length 0 명령어 실행 결과: {output}")
                                 else:
                                     self.logger.warning(f"Enable 모드 진입 실패 ({device['ip']})")
                             else:
                                 self.logger.debug(f"Enable 비밀번호가 설정되지 않음 ({device['ip']})")
                         else:
                             conn.enable()
+                            # 다른 장비도 terminal length 0 실행
+                            conn.send_command_timing('terminal length 0')
                     except Exception as e:
                         self.logger.warning(f"Enable 모드 진입 실패 ({device['ip']}): {str(e)}")
                         self.logger.debug(f"예외 상세: {traceback.format_exc()}")
