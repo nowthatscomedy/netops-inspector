@@ -26,7 +26,6 @@ INSPECTION_COMMANDS = {
     'ubiquoss': {
         'e4020': [
             'show version',
-            'show interfaces status',
             'show ip interface brief',
             'show running-config'
         ]
@@ -67,13 +66,9 @@ PARSING_RULES = {
                 'pattern': r'Version\s+([^\s,]+)',
                 'output_column': 'Version'
             },
-            'show interfaces status': {
-                'pattern': r'(\S+)\s+connected\s+\d+\s+\S+\s+\S+\s+\S+',
-                'output_column': 'Connected Interfaces'
-            },
             'show ip interface brief': {
-                'pattern': r'(\S+)\s+(?:\d+\.\d+\.\d+\.\d+|unassigned)\s+(up|down)\s+(up|down)',
-                'output_column': 'Interface Status'
+                'pattern': r'(\S+)\s+(?:\d+\.\d+\.\d+\.\d+|unassigned)\s+up\s+up',
+                'output_column': 'Up Interfaces'
             }
         }
     }
