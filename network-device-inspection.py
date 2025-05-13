@@ -30,7 +30,7 @@ file_handler.setFormatter(formatter)
 netmiko_logger.addHandler(file_handler)
 
 class NetworkInspector:
-    def __init__(self, input_excel: str, output_excel: str):
+    def __init__(self, input_excel: str, output_excel: str, backup_only: bool = False, inspection_only: bool = False):
         self.input_excel = input_excel
         # 출력 파일명에 타임스탬프 추가
         file_name, file_ext = os.path.splitext(output_excel)
@@ -42,10 +42,19 @@ class NetworkInspector:
         # 동일한 타임스탬프 사용
         self.backup_dir = os.path.join("backup", timestamp)
         self.session_log_dir = os.path.join("session_logs", timestamp)
-        os.makedirs("backup", exist_ok=True)
+        
+        # 세션 로그 디렉토리는 항상 생성
         os.makedirs("session_logs", exist_ok=True)
-        os.makedirs(self.backup_dir, exist_ok=True)
         os.makedirs(self.session_log_dir, exist_ok=True)
+        
+        # 백업만 하거나 점검과 백업을 모두 할 경우에만 백업 디렉토리 생성
+        if not inspection_only:
+            os.makedirs("backup", exist_ok=True)
+            os.makedirs(self.backup_dir, exist_ok=True)
+            
+        self.backup_only = backup_only
+        self.inspection_only = inspection_only
+        
         self.devices = self._load_devices()
         self.results = []
         self.results_lock = threading.Lock()
@@ -268,12 +277,21 @@ class NetworkInspector:
                 column = rules['output_column']
                 matches = re.finditer(pattern, output, re.MULTILINE)
                 values = [match.group(1) for match in matches]
-                result[column] = ', '.join(values)
+                
+                # first_match_only 옵션이 있으면 첫 번째 매치만 사용
+                if rules.get('first_match_only', False) and values:
+                    result[column] = values[0]
+                else:
+                    result[column] = ', '.join(values)
             # 여러 패턴인 경우
             elif 'patterns' in rules:
                 for pattern_rule in rules['patterns']:
                     pattern = pattern_rule['pattern']
                     matches = list(re.finditer(pattern, output, re.MULTILINE))
+                    
+                    # 매치가 없으면 건너뛰기
+                    if not matches:
+                        continue
                     
                     # 여러 컬럼에 매핑하는 경우 (그룹이 여러 개)
                     if 'output_columns' in pattern_rule and matches:
@@ -287,7 +305,12 @@ class NetworkInspector:
                     elif 'output_column' in pattern_rule and matches:
                         column = pattern_rule['output_column']
                         values = [match.group(1) for match in matches]
-                        result[column] = ', '.join(values)
+                        
+                        # first_match_only 옵션이 있으면 첫 번째 매치만 사용
+                        if pattern_rule.get('first_match_only', False) and values:
+                            result[column] = values[0]
+                        else:
+                            result[column] = ', '.join(values)
             else:
                 # 패턴이 없는 경우 전체 출력을 그대로 사용
                 if 'output_column' in rules:
@@ -316,8 +339,17 @@ class NetworkInspector:
             self.logger.error(f"TCP 연결 테스트 실패 ({ip}:{port}): {str(e)}")
             return False
 
-    def _connect_to_device(self, device: Dict) -> Tuple[Dict, Dict]:
-        """장비에 연결하고 명령어를 실행합니다."""
+    def _connect_to_device(self, device: Dict, inspection_mode: bool = True, backup_mode: bool = True) -> Tuple[Dict, Dict]:
+        """장비에 연결하고 명령어를 실행합니다.
+        
+        Args:
+            device: 장비 정보
+            inspection_mode: 점검 명령어 실행 여부
+            backup_mode: 백업 명령어 실행 여부
+            
+        Returns:
+            Tuple[Dict, Dict]: (장비 정보, 점검/백업 결과)
+        """
         # 쓰레드 이름을 장비 IP로 설정하여 로그에서 구분 가능하게 함
         threading.current_thread().name = f"Device-{device['ip']}"
         
@@ -351,14 +383,14 @@ class NetworkInspector:
                     elif device['vendor'].lower() == 'ubiquoss' and device['model'].lower() == 'e4020':
                         # 유비쿼스 장비는 Telnet 접속 시 특별 처리가 필요하므로 generic_telnet 사용
                         device_type = 'generic_telnet'
-                    elif device['vendor'].lower() == 'axgate' and device['model'].lower() == 'axgate-80d':
-                        device_type = 'generic_telnet'
+                    elif device['vendor'].lower() == 'axgate' and device['model'].lower() == 'axgate':
+                        device_type = 'generic'
                     else:
                         device_type = f"{str(device['vendor']).lower()}_{str(device['model']).lower()}_telnet"
                 else:
                     if device['vendor'].lower() == 'ubiquoss' and device['model'].lower() == 'e4020':
                         device_type = 'generic'
-                    elif device['vendor'].lower() == 'axgate' and device['model'].lower() == 'axgate-80d':
+                    elif device['vendor'].lower() == 'axgate' and device['model'].lower() == 'axgate':
                         device_type = 'generic'
                     elif device['vendor'].lower() == 'juniper':
                         # Juniper 장비는 'juniper_junos' device_type 사용
@@ -375,51 +407,57 @@ class NetworkInspector:
                         custom_handler.connect()
                         custom_handler.enable()
                         
-                        # 점검 명령어 실행
                         inspection_results = {}
-                        commands = self._get_device_commands(
-                            device['vendor'],
-                            device['model']
-                        )
                         
-                        for cmd in commands:
-                            try:
-                                # 명령어 실행
-                                output = custom_handler.send_command(cmd)
-                                
-                                # 결과 파싱
-                                parsed = self._parse_command_output(
-                                    device['vendor'],
-                                    device['model'],
-                                    cmd,
-                                    output
-                                )
-                                inspection_results.update(parsed)
-                            except Exception as e:
-                                self.logger.error(f"명령어 실행 실패 ({cmd} - {device['ip']}): {str(e)}")
-                                inspection_results[f"error_{cmd}"] = str(e)
+                        # 점검 모드일 경우 점검 명령어 실행
+                        if inspection_mode:
+                            # 점검 명령어 실행
+                            commands = self._get_device_commands(
+                                device['vendor'],
+                                device['model']
+                            )
+                            
+                            for cmd in commands:
+                                try:
+                                    # 명령어 실행
+                                    output = custom_handler.send_command(cmd)
+                                    
+                                    # 결과 파싱
+                                    parsed = self._parse_command_output(
+                                        device['vendor'],
+                                        device['model'],
+                                        cmd,
+                                        output
+                                    )
+                                    inspection_results.update(parsed)
+                                except Exception as e:
+                                    self.logger.error(f"명령어 실행 실패 ({cmd} - {device['ip']}): {str(e)}")
+                                    inspection_results[f"error_{cmd}"] = str(e)
                         
-                        # 설정 백업
-                        backup_cmd = self._get_backup_command(
-                            device['vendor'],
-                            device['model']
-                        )
-                        if backup_cmd:
-                            try:
-                                # 백업 명령어 실행
-                                backup_output = custom_handler.send_command(backup_cmd, timeout=10)
-                                
-                                # 백업 파일 저장
-                                backup_filename = os.path.join(
-                                    self.backup_dir,
-                                    f"{device['ip']}_{device['vendor']}_{device['model']}.txt"
-                                )
-                                with open(backup_filename, 'w', encoding='utf-8') as f:
-                                    f.write(backup_output)
-                                self.logger.info(f"백업 파일 저장 완료: {backup_filename}")
-                            except Exception as e:
-                                self.logger.error(f"백업 실패 ({device['ip']}): {str(e)}")
-                                inspection_results["backup_error"] = str(e)
+                        # 백업 모드일 경우에만 백업 명령어 실행
+                        if backup_mode:
+                            # 설정 백업
+                            backup_cmd = self._get_backup_command(
+                                device['vendor'],
+                                device['model']
+                            )
+                            if backup_cmd:
+                                try:
+                                    # 백업 명령어 실행
+                                    backup_output = custom_handler.send_command(backup_cmd, timeout=10)
+                                    
+                                    # 백업 파일 저장
+                                    backup_filename = os.path.join(
+                                        self.backup_dir,
+                                        f"{device['ip']}_{device['vendor']}_{device['model']}.txt"
+                                    )
+                                    with open(backup_filename, 'w', encoding='utf-8') as f:
+                                        f.write(backup_output)
+                                    self.logger.info(f"백업 파일 저장 완료: {backup_filename}")
+                                    inspection_results["backup_file"] = backup_filename
+                                except Exception as e:
+                                    self.logger.error(f"백업 실패 ({device['ip']}): {str(e)}")
+                                    inspection_results["backup_error"] = str(e)
                         
                         # 연결 종료
                         custom_handler.disconnect()
@@ -476,8 +514,8 @@ class NetworkInspector:
                             tn.write(device['enable_password'].encode('ascii') + b"\n")
                             time.sleep(2)
                         
-                        # terminal length 0 명령어 실행 (Axgate-80D 제외)
-                        if not (device['vendor'].lower() == 'axgate' and device['model'].lower() == 'axgate-80d'):
+                        # terminal length 0 명령어 실행 (Axgate 제외)
+                        if not (device['vendor'].lower() == 'axgate' and device['model'].lower() == 'axgate'):
                             tn.write(b"terminal length 0\n")
                             time.sleep(1)
                             output = tn.read_very_eager().decode('ascii')
@@ -485,152 +523,11 @@ class NetworkInspector:
                                 log.write(f"terminal length 0 명령어 실행 결과:\n{output}\n")
                                 log.write("-"*50 + "\n")
                         
-                        # 명령어 실행
                         inspection_results = {}
-                        commands = self._get_device_commands(
-                            device['vendor'],
-                            device['model']
-                        )
                         
-                        for cmd in commands:
-                            try:
-                                # 명령어 실행 전 로그
-                                with open(session_log_file, 'a', encoding='utf-8') as log:
-                                    log.write(f"\n명령어 실행: {cmd}\n")
-                                    log.write("-"*50 + "\n")
-                                
-                                # 명령어 실행
-                                tn.write(cmd.encode('ascii') + b"\n")
-                                time.sleep(3)  # 명령어 실행 결과 기다림
-                                output = tn.read_very_eager().decode('ascii')
-                                
-                                # 명령어 실행 결과 로그
-                                with open(session_log_file, 'a', encoding='utf-8') as log:
-                                    log.write(f"출력:\n{output}\n")
-                                    log.write("-"*50 + "\n")
-                                
-                                # 결과 파싱
-                                parsed = self._parse_command_output(
-                                    device['vendor'],
-                                    device['model'],
-                                    cmd,
-                                    output
-                                )
-                                inspection_results.update(parsed)
-                            except Exception as e:
-                                self.logger.error(f"명령어 실행 실패 ({cmd} - {device['ip']}): {str(e)}")
-                                inspection_results[f"error_{cmd}"] = str(e)
-                        
-                        # 설정 백업
-                        backup_cmd = self._get_backup_command(
-                            device['vendor'],
-                            device['model']
-                        )
-                        if backup_cmd:
-                            try:
-                                # 백업 명령어 실행 전 로그
-                                with open(session_log_file, 'a', encoding='utf-8') as log:
-                                    log.write(f"\n백업 명령어 실행: {backup_cmd}\n")
-                                    log.write("-"*50 + "\n")
-                                
-                                # 백업 명령어 실행
-                                tn.write(backup_cmd.encode('ascii') + b"\n")
-                                time.sleep(10)  # 백업 명령어는 더 긴 시간 기다림
-                                backup_output = tn.read_very_eager().decode('ascii')
-                                
-                                # 백업 명령어 실행 결과 로그
-                                with open(session_log_file, 'a', encoding='utf-8') as log:
-                                    log.write(f"백업 출력:\n{backup_output}\n")
-                                    log.write("-"*50 + "\n")
-                                
-                                # 백업 파일 저장
-                                backup_filename = os.path.join(
-                                    self.backup_dir,
-                                    f"{device['ip']}_{device['vendor']}_{device['model']}.txt"
-                                )
-                                with open(backup_filename, 'w', encoding='utf-8') as f:
-                                    f.write(backup_output)
-                                self.logger.info(f"백업 파일 저장 완료: {backup_filename}")
-                            except Exception as e:
-                                self.logger.error(f"백업 실패 ({device['ip']}): {str(e)}")
-                                inspection_results["backup_error"] = str(e)
-                        
-                        # 세션 종료
-                        tn.write(b"exit\n")
-                        tn.close()
-                        
-                        # 세션 로그 종료
-                        with open(session_log_file, 'a', encoding='utf-8') as log:
-                            log.write(f"\n{'='*50}\n")
-                            log.write(f"세션 완료 - {datetime.now()}\n")
-                            log.write(f"{'='*50}\n\n")
-                        
-                        return device, inspection_results
-                        
-                    except Exception as e:
-                        self.logger.error(f"유비쿼스 Telnet 접속 실패 ({device['ip']}): {str(e)}")
-                        retry_count += 1
-                        last_error = e
-                        
-                        # 실패 로그 기록
-                        with open(session_log_file, 'a', encoding='utf-8') as log:
-                            log.write(f"\n{'='*50}\n")
-                            log.write(f"유비쿼스 Telnet 접속 실패 ({retry_count}) - {datetime.now()}\n")
-                            log.write(f"오류: {str(e)}\n")
-                            log.write(f"{'='*50}\n\n")
-                        
-                        if retry_count < self.max_retries:
-                            time.sleep(2 ** retry_count)  # 지수 백오프
-                            continue
-                        else:
-                            return device, {"error": f"유비쿼스 Telnet 접속 실패: {str(e)}"}
-
-                # Axgate-80D 장비 특별 처리
-                if device['vendor'].lower() == 'axgate' and device['model'].lower() == 'axgate-80d':
-                    self.logger.debug(f"Axgate-80D 장비 접속 시작: {device['ip']}")
-                    
-                    # Telnet 직접 구현 (username/password 프롬프트 처리)
-                    if device['connection_type'].lower() == 'telnet':
-                        try:
-                            # 타임아웃 값을 30초로 늘림
-                            tn = telnetlib.Telnet(device['ip'], port=device['port'], timeout=30)
-                            
-                            # Username 입력 (타임아웃 20초로 늘림)
-                            tn.read_until(b"Username:", timeout=20)
-                            tn.write(device['username'].encode('ascii') + b"\n")
-                            time.sleep(2)  # 대기 시간 증가
-                            
-                            # Password 입력 (타임아웃 20초로 늘림)
-                            tn.read_until(b"Password:", timeout=20)
-                            tn.write(device['password'].encode('ascii') + b"\n")
-                            time.sleep(3)  # 대기 시간 증가
-                            
-                            # Enable 모드 진입
-                            output = tn.read_very_eager().decode('ascii')
-                            with open(session_log_file, 'a', encoding='utf-8') as log:
-                                log.write(f"로그인 후 출력:\n{output}\n")
-                                log.write("-"*50 + "\n")
-                            
-                            tn.write(b"enable\n")
-                            time.sleep(1)
-                            
-                            # Enable 비밀번호 입력 (있는 경우)
-                            if device.get('enable_password'):
-                                tn.read_until(b"Password:", timeout=10)
-                                tn.write(device['enable_password'].encode('ascii') + b"\n")
-                                time.sleep(2)
-                            
-                            # terminal length 0 명령어 실행 (Axgate-80D 제외)
-                            if not (device['vendor'].lower() == 'axgate' and device['model'].lower() == 'axgate-80d'):
-                                tn.write(b"terminal length 0\n")
-                                time.sleep(1)
-                                output = tn.read_very_eager().decode('ascii')
-                                with open(session_log_file, 'a', encoding='utf-8') as log:
-                                    log.write(f"terminal length 0 명령어 실행 결과:\n{output}\n")
-                                    log.write("-"*50 + "\n")
-                            
+                        # 점검 모드일 경우에만 점검 명령어 실행
+                        if inspection_mode:
                             # 명령어 실행
-                            inspection_results = {}
                             commands = self._get_device_commands(
                                 device['vendor'],
                                 device['model']
@@ -664,7 +561,9 @@ class NetworkInspector:
                                 except Exception as e:
                                     self.logger.error(f"명령어 실행 실패 ({cmd} - {device['ip']}): {str(e)}")
                                     inspection_results[f"error_{cmd}"] = str(e)
-                            
+                        
+                        # 백업 모드일 경우에만 백업 명령어 실행
+                        if backup_mode:
                             # 설정 백업
                             backup_cmd = self._get_backup_command(
                                 device['vendor'],
@@ -672,20 +571,8 @@ class NetworkInspector:
                             )
                             if backup_cmd:
                                 try:
-                                    # 백업 명령어 실행 전 로그
-                                    with open(session_log_file, 'a', encoding='utf-8') as log:
-                                        log.write(f"\n백업 명령어 실행: {backup_cmd}\n")
-                                        log.write("-"*50 + "\n")
-                                    
                                     # 백업 명령어 실행
-                                    tn.write(backup_cmd.encode('ascii') + b"\n")
-                                    time.sleep(10)  # 백업 명령어는 더 긴 시간 기다림
                                     backup_output = tn.read_very_eager().decode('ascii')
-                                    
-                                    # 백업 명령어 실행 결과 로그
-                                    with open(session_log_file, 'a', encoding='utf-8') as log:
-                                        log.write(f"백업 출력:\n{backup_output}\n")
-                                        log.write("-"*50 + "\n")
                                     
                                     # 백업 파일 저장
                                     backup_filename = os.path.join(
@@ -695,39 +582,80 @@ class NetworkInspector:
                                     with open(backup_filename, 'w', encoding='utf-8') as f:
                                         f.write(backup_output)
                                     self.logger.info(f"백업 파일 저장 완료: {backup_filename}")
+                                    inspection_results["backup_file"] = backup_filename
                                 except Exception as e:
                                     self.logger.error(f"백업 실패 ({device['ip']}): {str(e)}")
                                     inspection_results["backup_error"] = str(e)
+                        
+                        # 세션 종료
+                        tn.write(b"exit\n")
+                        tn.close()
+                        
+                        # 세션 로그 종료
+                        with open(session_log_file, 'a', encoding='utf-8') as log:
+                            log.write(f"\n{'='*50}\n")
+                            log.write(f"세션 완료 - {datetime.now()}\n")
+                            log.write(f"{'='*50}\n\n")
+                        
+                        return device, inspection_results
+                        
+                    except Exception as e:
+                        self.logger.error(f"유비쿼스 Telnet 접속 실패 ({device['ip']}): {str(e)}")
+                        retry_count += 1
+                        last_error = e
+                        
+                        # 실패 로그 기록
+                        with open(session_log_file, 'a', encoding='utf-8') as log:
+                            log.write(f"\n{'='*50}\n")
+                            log.write(f"유비쿼스 Telnet 접속 실패 ({retry_count}) - {datetime.now()}\n")
+                            log.write(f"오류: {str(e)}\n")
+                            log.write(f"{'='*50}\n\n")
+                        
+                        if retry_count < self.max_retries:
+                            time.sleep(2 ** retry_count)  # 지수 백오프
+                            continue
+                        else:
+                            return device, {"error": f"유비쿼스 Telnet 접속 실패: {str(e)}"}
+
+                # Axgate 장비 특별 처리
+                if device['vendor'].lower() == 'axgate' and device['model'].lower() == 'axgate':
+                    self.logger.debug(f"Axgate 장비 접속 시작: {device['ip']}")
+                    
+                    try:
+                        # Telnet 직접 구현 (username/password 프롬프트 처리)
+                        tn = telnetlib.Telnet(device['ip'], port=device['port'], timeout=self.timeout)
+                        
+                        # Username 입력
+                        tn.read_until(b"Username:", timeout=10)
+                        tn.write(device['username'].encode('ascii') + b"\n")
+                        time.sleep(1)
+                        
+                        # Password 입력
+                        tn.read_until(b"Password:", timeout=10)
+                        tn.write(device['password'].encode('ascii') + b"\n")
+                        time.sleep(2)
+                        
+                        # 로그인 후 출력 확인
+                        output = tn.read_very_eager().decode('utf-8', errors='ignore')
+                        
+                        # 세션 로그에 저장
+                        with open(session_log_file, 'a', encoding='utf-8') as log:
+                            log.write(f"\n로그인 출력:\n")
+                            log.write(f"{output}\n")
+                    except Exception as e:
+                        self.logger.error(f"Axgate Telnet 접속 실패 ({device['ip']}): {str(e)}")
+                        
+                        retry_count += 1
+                        last_error = e
+                        
+                        with open(session_log_file, 'a', encoding='utf-8') as log:
+                            log.write(f"Axgate Telnet 접속 실패 ({retry_count}) - {datetime.now()}\n")
+                            log.write(f"오류: {str(e)}\n")
                             
-                            # 세션 종료
-                            tn.write(b"exit\n")
-                            tn.close()
-                            
-                            # 세션 로그 종료
-                            with open(session_log_file, 'a', encoding='utf-8') as log:
-                                log.write(f"\n{'='*50}\n")
-                                log.write(f"세션 완료 - {datetime.now()}\n")
-                                log.write(f"{'='*50}\n\n")
-                            
-                            return device, inspection_results
-                            
-                        except Exception as e:
-                            self.logger.error(f"Axgate-80D Telnet 접속 실패 ({device['ip']}): {str(e)}")
-                            retry_count += 1
-                            last_error = e
-                            
-                            # 실패 로그 기록
-                            with open(session_log_file, 'a', encoding='utf-8') as log:
-                                log.write(f"\n{'='*50}\n")
-                                log.write(f"Axgate-80D Telnet 접속 실패 ({retry_count}) - {datetime.now()}\n")
-                                log.write(f"오류: {str(e)}\n")
-                                log.write(f"{'='*50}\n\n")
-                            
-                            if retry_count < self.max_retries:
-                                time.sleep(2 ** retry_count)  # 지수 백오프
-                                continue
-                            else:
-                                return device, {"error": f"Axgate-80D Telnet 접속 실패: {str(e)}"}
+                        time.sleep(1)  # 재시도 전 대기
+                        continue  # 재시도
+                        
+                    return device, {"error": f"Axgate Telnet 접속 실패: {str(e)}"}
 
                 # 일반 장비 접속 (Netmiko 사용)
                 # device 객체의 주요 필드 문자열 변환
@@ -762,8 +690,8 @@ class NetworkInspector:
                         # Ubiquoss E4020의 경우 프롬프트 패턴 지정 (SSH 접속 시)
                         if device['vendor'].lower() == 'ubiquoss' and device['model'].lower() == 'e4020' and device['connection_type'].lower() == 'ssh':
                             conn.expect_string = r'[>#]'
-                        # Axgate-80D의 경우 프롬프트 패턴 지정 (SSH 접속 시)
-                        elif device['vendor'].lower() == 'axgate' and device['model'].lower() == 'axgate-80d' and device['connection_type'].lower() == 'ssh':
+                        # Axgate의 경우 프롬프트 패턴 지정 (SSH 접속 시)
+                        elif device['vendor'].lower() == 'axgate' and device['model'].lower() == 'axgate' and device['connection_type'].lower() == 'ssh':
                             conn.expect_string = r'[>#]'
                         
                         # enable 모드 진입
@@ -793,7 +721,7 @@ class NetworkInspector:
                             else:
                                 conn.enable()
                                 # 다른 장비도 terminal length 0 실행
-                                if not (device['vendor'].lower() == 'axgate' and device['model'].lower() == 'axgate-80d'):
+                                if not (device['vendor'].lower() == 'axgate' and device['model'].lower() == 'axgate'):
                                     conn.send_command_timing('terminal length 0')
                         except Exception as e:
                             self.logger.warning(f"Enable 모드 진입 실패 ({device['ip']}): {str(e)}")
@@ -801,69 +729,73 @@ class NetworkInspector:
                         
                         # 점검 명령어 실행
                         inspection_results = {}
-                        commands = self._get_device_commands(
-                            device['vendor'],
-                            device['model']
-                        )
                         
-                        for cmd in commands:
-                            try:
-                                # 명령어 실행 전 로그
-                                with open(session_log_file, 'a', encoding='utf-8') as log:
-                                    log.write(f"\n명령어 실행: {cmd}\n")
-                                    log.write("-"*50 + "\n")
-                                
-                                # 명령어 실행
-                                output = conn.send_command(cmd, read_timeout=30)
-                                
-                                # 명령어 실행 결과 로그
-                                with open(session_log_file, 'a', encoding='utf-8') as log:
-                                    log.write(f"출력:\n{output}\n")
-                                    log.write("-"*50 + "\n")
-                                
-                                # 결과 파싱
-                                parsed = self._parse_command_output(
-                                    device['vendor'],
-                                    device['model'],
-                                    cmd,
-                                    output
-                                )
-                                inspection_results.update(parsed)
-                            except Exception as e:
-                                self.logger.error(f"명령어 실행 실패 ({cmd} - {device['ip']}): {str(e)}")
-                                inspection_results[f"error_{cmd}"] = str(e)
+                        if inspection_mode:
+                            commands = self._get_device_commands(
+                                device['vendor'],
+                                device['model']
+                            )
+                            
+                            for cmd in commands:
+                                try:
+                                    # 명령어 실행 전 로그
+                                    with open(session_log_file, 'a', encoding='utf-8') as log:
+                                        log.write(f"\n명령어 실행: {cmd}\n")
+                                        log.write("-"*50 + "\n")
+                                    
+                                    # 명령어 실행
+                                    output = conn.send_command(cmd, read_timeout=30)
+                                    
+                                    # 명령어 실행 결과 로그
+                                    with open(session_log_file, 'a', encoding='utf-8') as log:
+                                        log.write(f"출력:\n{output}\n")
+                                        log.write("-"*50 + "\n")
+                                    
+                                    # 결과 파싱
+                                    parsed = self._parse_command_output(
+                                        device['vendor'],
+                                        device['model'],
+                                        cmd,
+                                        output
+                                    )
+                                    inspection_results.update(parsed)
+                                except Exception as e:
+                                    self.logger.error(f"명령어 실행 실패 ({cmd} - {device['ip']}): {str(e)}")
+                                    inspection_results[f"error_{cmd}"] = str(e)
                         
-                        # 설정 백업
-                        backup_cmd = self._get_backup_command(
-                            device['vendor'],
-                            device['model']
-                        )
-                        if backup_cmd:
-                            try:
-                                # 백업 명령어 실행 전 로그
-                                with open(session_log_file, 'a', encoding='utf-8') as log:
-                                    log.write(f"\n백업 명령어 실행: {backup_cmd}\n")
-                                    log.write("-"*50 + "\n")
-                                
-                                # 백업 명령어 실행
-                                backup_output = conn.send_command(backup_cmd, read_timeout=60)
-                                
-                                # 백업 명령어 실행 결과 로그
-                                with open(session_log_file, 'a', encoding='utf-8') as log:
-                                    log.write(f"백업 출력:\n{backup_output}\n")
-                                    log.write("-"*50 + "\n")
-                                
-                                # 백업 파일 저장
-                                backup_filename = os.path.join(
-                                    self.backup_dir,
-                                    f"{device['ip']}_{device['vendor']}_{device['model']}.txt"
-                                )
-                                with open(backup_filename, 'w', encoding='utf-8') as f:
-                                    f.write(backup_output)
-                                self.logger.info(f"백업 파일 저장 완료: {backup_filename}")
-                            except Exception as e:
-                                self.logger.error(f"백업 실패 ({device['ip']}): {str(e)}")
-                                inspection_results["backup_error"] = str(e)
+                        # 백업 모드일 때만 설정 백업
+                        if backup_mode:
+                            backup_cmd = self._get_backup_command(
+                                device['vendor'],
+                                device['model']
+                            )
+                            if backup_cmd:
+                                try:
+                                    # 백업 명령어 실행 전 로그
+                                    with open(session_log_file, 'a', encoding='utf-8') as log:
+                                        log.write(f"\n백업 명령어 실행: {backup_cmd}\n")
+                                        log.write("-"*50 + "\n")
+                                    
+                                    # 백업 명령어 실행
+                                    backup_output = conn.send_command(backup_cmd, read_timeout=60)
+                                    
+                                    # 백업 명령어 실행 결과 로그
+                                    with open(session_log_file, 'a', encoding='utf-8') as log:
+                                        log.write(f"백업 출력:\n{backup_output}\n")
+                                        log.write("-"*50 + "\n")
+                                    
+                                    # 백업 파일 저장
+                                    backup_filename = os.path.join(
+                                        self.backup_dir,
+                                        f"{device['ip']}_{device['vendor']}_{device['model']}.txt"
+                                    )
+                                    with open(backup_filename, 'w', encoding='utf-8') as f:
+                                        f.write(backup_output)
+                                    self.logger.info(f"백업 파일 저장 완료: {backup_filename}")
+                                    inspection_results["backup_file"] = backup_filename
+                                except Exception as e:
+                                    self.logger.error(f"백업 실패 ({device['ip']}): {str(e)}")
+                                    inspection_results["backup_error"] = str(e)
                         
                         # 세션 로그 종료
                         with open(session_log_file, 'a', encoding='utf-8') as log:
@@ -945,7 +877,11 @@ class NetworkInspector:
     
     def inspect_devices(self, backup_only: bool = False):
         """네트워크 장비를 점검하고 결과를 저장합니다."""
-        self.logger.info("장비 점검 시작")
+        if backup_only:
+            self.logger.info("장비 백업 시작")
+        else:
+            self.logger.info("장비 점검 시작")
+            
         total_devices = len(self.devices)
         completed_devices = 0
         
@@ -978,7 +914,11 @@ class NetworkInspector:
                     completed_devices += 1
                     self.logger.info(f"진행 상황: {completed_devices}/{total_devices} 장비 처리 완료")
         
-        self.logger.info("장비 점검 완료")
+        if backup_only:
+            self.logger.info("장비 백업 완료")
+        else:
+            self.logger.info("장비 점검 완료")
+            
         self.save_results()
 
     def inspect_and_backup_devices(self):
@@ -1038,8 +978,8 @@ class NetworkInspector:
                 result['error_message'] = error_message
                 return result
 
-            # 장비 연결 및 명령어 실행
-            device, connection_results = self._connect_to_device(device)
+            # 장비 연결 및 명령어 실행 (점검과 백업 모두 활성화)
+            device, connection_results = self._connect_to_device(device, inspection_mode=True, backup_mode=True)
             
             # 오류 확인
             if 'error' in connection_results:
@@ -1083,8 +1023,8 @@ class NetworkInspector:
                 result['error_message'] = error_message
                 return result
 
-            # 장비 연결 및 명령어 실행
-            device, inspection_results = self._connect_to_device(device)
+            # 장비 연결 및 명령어 실행 (점검만 활성화)
+            device, inspection_results = self._connect_to_device(device, inspection_mode=True, backup_mode=False)
             
             # 오류 확인
             if 'error' in inspection_results:
@@ -1124,8 +1064,8 @@ class NetworkInspector:
                 result['error_message'] = error_message
                 return result
 
-            # 장비 연결
-            device, connection_results = self._connect_to_device(device)
+            # 장비 연결 (백업만 활성화)
+            device, connection_results = self._connect_to_device(device, inspection_mode=False, backup_mode=True)
             
             # 오류 확인
             if 'error' in connection_results:
@@ -1133,13 +1073,7 @@ class NetworkInspector:
                 result['error_message'] = connection_results['error']
                 return result
             
-            # 백업 명령어 실행
-            backup_cmd = self._get_backup_command(device['vendor'], device['model'])
-            if not backup_cmd:
-                result['status'] = 'error'
-                result['error_message'] = '백업 명령어를 찾을 수 없음'
-                return result
-                
+            # 백업 관련 오류 확인
             if 'backup_error' in connection_results:
                 result['status'] = 'error'
                 result['error_message'] = connection_results['backup_error']
@@ -1210,16 +1144,17 @@ def main():
         
         choice = input("\n실행할 작업을 선택하세요 (1-3): ")
         
-        inspector = NetworkInspector(input_excel, output_excel)
-        
         if choice == "1":
             # 점검만 실행
+            inspector = NetworkInspector(input_excel, output_excel, backup_only=False, inspection_only=True)
             inspector.inspect_devices(backup_only=False)
         elif choice == "2":
             # 백업만 실행
+            inspector = NetworkInspector(input_excel, output_excel, backup_only=True, inspection_only=False)
             inspector.inspect_devices(backup_only=True)
         elif choice == "3":
             # 점검과 백업을 함께 실행 (단일 작업)
+            inspector = NetworkInspector(input_excel, output_excel, backup_only=False, inspection_only=False)
             inspector.inspect_and_backup_devices()
         else:
             print("잘못된 선택입니다. 1-3 사이의 숫자를 입력하세요.")
@@ -1227,7 +1162,10 @@ def main():
         
         print("\n작업이 완료되었습니다.")
         print(f"결과 파일: {inspector.output_excel}")
-        print(f"백업 디렉토리: {inspector.backup_dir}")
+        if choice == "1":
+            print("백업 작업을 수행하지 않았습니다.")
+        else:
+            print(f"백업 디렉토리: {inspector.backup_dir}")
         
     except Exception as e:
         print(f"오류 발생: {str(e)}")

@@ -131,8 +131,8 @@ class UbiquossE4020Handler(CustomDeviceHandler):
                     log.write(f"{'='*50}\n\n")
 
 
-class Axgate80DHandler(CustomDeviceHandler):
-    """Axgate-80D 장비 핸들러"""
+class AxgateHandler(CustomDeviceHandler):
+    """Axgate 장비 핸들러"""
     
     def __init__(self, device, timeout=30, session_log_file=None):
         super().__init__(device, timeout, session_log_file)
@@ -141,9 +141,9 @@ class Axgate80DHandler(CustomDeviceHandler):
     def connect(self):
         """텔넷으로 장비에 연결"""
         if self.device['connection_type'].lower() != 'telnet':
-            raise ValueError("Axgate80DHandler는 텔넷 연결만 지원합니다")
+            raise ValueError("AxgateHandler는 텔넷 연결만 지원합니다")
         
-        self.logger.debug(f"Axgate-80D 장비 접속 시작: {self.device['ip']}")
+        self.logger.debug(f"Axgate 장비 접속 시작: {self.device['ip']}")
         
         self.tn = telnetlib.Telnet(self.device['ip'], port=self.device['port'], timeout=self.timeout)
         
@@ -164,14 +164,14 @@ class Axgate80DHandler(CustomDeviceHandler):
         return True
     
     def enable(self):
-        """특권 모드 진입 - Axgate-80D는 enable 명령어가 필요 없음"""
-        # Axgate-80D는 로그인 후 이미 특권 모드이므로 아무 작업도 수행하지 않음
-        self.logger.debug(f"Axgate-80D는 enable 명령어가 필요 없음: {self.device['ip']}")
+        """특권 모드 진입 - Axgate는 enable 명령어가 필요 없음"""
+        # Axgate는 로그인 후 이미 특권 모드이므로 아무 작업도 수행하지 않음
+        self.logger.debug(f"Axgate는 enable 명령어가 필요 없음: {self.device['ip']}")
         
         # 로그에 기록
         if self.session_log_file:
             with open(self.session_log_file, 'a', encoding='utf-8') as log:
-                log.write("\nAxgate-80D는 enable 명령어가 필요 없음\n")
+                log.write("\nAxgate는 enable 명령어가 필요 없음\n")
                 log.write("-"*50 + "\n")
     
     def send_command(self, command, timeout=None):
@@ -204,8 +204,8 @@ class Axgate80DHandler(CustomDeviceHandler):
                     log.write(f"{'='*50}\n\n")
 
 
-class Axgate80DSSHHandler(CustomDeviceHandler):
-    """Axgate-80D SSH 장비 핸들러"""
+class AxgateSSHHandler(CustomDeviceHandler):
+    """Axgate SSH 장비 핸들러"""
     
     def __init__(self, device, timeout=30, session_log_file=None):
         super().__init__(device, timeout, session_log_file)
@@ -215,9 +215,9 @@ class Axgate80DSSHHandler(CustomDeviceHandler):
     def connect(self):
         """SSH로 장비에 연결"""
         if self.device['connection_type'].lower() != 'ssh':
-            raise ValueError("Axgate80DSSHHandler는 SSH 연결만 지원합니다")
+            raise ValueError("AxgateSSHHandler는 SSH 연결만 지원합니다")
         
-        self.logger.debug(f"Axgate-80D 장비 SSH 접속 시작: {self.device['ip']}")
+        self.logger.debug(f"Axgate 장비 SSH 접속 시작: {self.device['ip']}")
 
         # 디버깅을 위한 기본 연결 정보 출력
         self.logger.debug(f"연결 정보 - IP: {self.device['ip']}, PORT: {self.device['port']}, USER: {self.device['username']}")
@@ -282,7 +282,7 @@ class Axgate80DSSHHandler(CustomDeviceHandler):
                     return True
             
         except Exception as e:
-            self.logger.error(f"Axgate-80D SSH 연결 실패: {str(e)}")
+            self.logger.error(f"Axgate SSH 연결 실패: {str(e)}")
             if self.session_log_file:
                 with open(self.session_log_file, 'a', encoding='utf-8') as log:
                     log.write(f"\nSSH 연결 실패: {str(e)}\n")
@@ -328,13 +328,13 @@ class Axgate80DSSHHandler(CustomDeviceHandler):
         return buffer
     
     def enable(self):
-        """특권 모드 진입 - Axgate-80D는 enable 명령어가 필요 없음"""
-        self.logger.debug(f"Axgate-80D는 enable 명령어가 필요 없음: {self.device['ip']}")
+        """특권 모드 진입 - Axgate는 enable 명령어가 필요 없음"""
+        self.logger.debug(f"Axgate는 enable 명령어가 필요 없음: {self.device['ip']}")
         
         # 로그에 기록
         if self.session_log_file:
             with open(self.session_log_file, 'a', encoding='utf-8') as log:
-                log.write("\nAxgate-80D는 enable 명령어가 필요 없음\n")
+                log.write("\nAxgate는 enable 명령어가 필요 없음\n")
                 log.write("-"*50 + "\n")
                 
         # 현재 프롬프트 확인
@@ -468,7 +468,7 @@ class Axgate80DSSHHandler(CustomDeviceHandler):
 
 
 class VForceSSHHandler(CustomDeviceHandler):
-    """NexG VForce SSH 장비 핸들러 (Axgate-80D와 유사한 접속 방식)"""
+    """NexG VForce SSH 장비 핸들러 (Axgate와 유사한 접속 방식)"""
     
     def __init__(self, device, timeout=30, session_log_file=None):
         super().__init__(device, timeout, session_log_file)
@@ -843,18 +843,20 @@ class VForceTelnetHandler(CustomDeviceHandler):
 
 # 장비 유형에 따른 핸들러 팩토리 함수
 def get_custom_handler(device, timeout=10, session_log_file=None):
-    """장비 유형에 따른 적절한 핸들러 반환"""
-    vendor = device['vendor'].lower()
-    model = device['model'].lower()
-    connection_type = device['connection_type'].lower()
+    """장비 유형에 맞는 커스텀 핸들러 반환"""
+    vendor = device.get('vendor', '').lower()
+    model = device.get('model', '').lower()
+    connection_type = device.get('connection_type', '').lower()
     
-    if vendor == 'ubiquoss' and model == 'e4020' and connection_type == 'telnet':
+    # 유비쿼스 E4020 장비 처리
+    if vendor == 'ubiquoss' and model == 'e4020':
         return UbiquossE4020Handler(device, timeout, session_log_file)
-    elif vendor == 'axgate' and model == 'axgate-80d':
+    # Axgate 장비 처리
+    elif vendor == 'axgate' and model == 'axgate':
         if connection_type == 'telnet':
-            return Axgate80DHandler(device, timeout, session_log_file)
+            return AxgateHandler(device, timeout, session_log_file)
         elif connection_type == 'ssh':
-            return Axgate80DSSHHandler(device, timeout, session_log_file)
+            return AxgateSSHHandler(device, timeout, session_log_file)
     elif vendor == 'nexg' and model == 'vforce':
         if connection_type == 'ssh':
             return VForceSSHHandler(device, timeout, session_log_file)
