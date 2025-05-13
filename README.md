@@ -43,7 +43,8 @@ pip install -r requirements.txt
 ## 사용 방법
 
 1. `devices.xlsx` 파일에 장비 정보 입력
-   - 필수 컬럼: ip, vendor, model, connection_type, port, username, password
+   - 필수 컬럼: ip, vendor, model, connection_type, port, password
+   - 선택 컬럼: username (레거시 Cisco 장비와 같이 username을 사용하지 않는 장비의 경우 빈 값 허용)
    - connection_type: ssh 또는 telnet
    - port: SSH(22) 또는 Telnet(23)의 기본 포트 사용 가능, 그 외 포트는 1024-65535 범위 내에서 지정
 
@@ -108,6 +109,7 @@ python network-device-inspection.py
 - Cisco
   - IOS
   - IOS-XE
+  - Legacy (username 없이 password만으로 접속하는 레거시 장비)
 - Juniper
   - JunOS (SRX 시리즈 등 모든 Juniper 장비)
 - Ubiquoss
@@ -119,9 +121,11 @@ python network-device-inspection.py
 
 ## 최근 변경 사항
 
+- 레거시 Cisco 스위치 지원 추가 (username 없이 password만으로 접속)
+- username 필드를 필수가 아닌 선택적 필드로 변경
 - Juniper SRX300 모델을 JunOS로 통일하여 모든 Juniper 장비에 대한 일관된 처리 지원
 - Axgate-80D 모델을 Axgate로 통일하여 Axgate 장비 처리 간소화
-- 파싱 결과 중복 문제 해결 (특히 Juniper 장비)
+- 파싱 결과 중복 문제 해결 (특히 Juniper 장비에서 first_match_only 옵션 추가)
 - 점검 또는 백업 모드만 단독으로 실행 시 불필요한 명령어 실행 방지
 - 다양한 Juniper 장비 모델에 대한 파싱 패턴 개선
 

@@ -11,6 +11,11 @@ INSPECTION_COMMANDS = {
         'ios-xe': [
             'show version',
             'show running-config'
+        ],
+        'legacy': [
+            'show version',
+            'show inventory',
+            'show running-config'
         ]
     },
     'juniper': {
@@ -45,7 +50,8 @@ INSPECTION_COMMANDS = {
 BACKUP_COMMANDS = {
     'cisco': {
         'ios': 'show running-config',
-        'ios-xe': 'show running-config'
+        'ios-xe': 'show running-config',
+        'legacy': 'show running-config'
     },
     'juniper': {
         'junos': 'show configuration | display set'
@@ -68,6 +74,37 @@ PARSING_RULES = {
             'show version': {
                 'pattern': r'Cisco IOS Software.*Version\s+([^\s,]+)',
                 'output_column': 'Version'
+            }
+        },
+        'legacy': {
+            'show version': {
+                'patterns': [
+                    {
+                        'pattern': r'(?:Cisco IOS Software|IOS \(tm\)).*?Version\s+([^\s,]+)',
+                        'output_column': 'Version',
+                        'first_match_only': True
+                    },
+                    {
+                        'pattern': r'System image file is "([^"]+)"',
+                        'output_column': 'System Image',
+                        'first_match_only': True
+                    },
+                    {
+                        'pattern': r'([^\s]+) uptime is (.+)',
+                        'output_columns': ['Hostname', 'Uptime'],
+                        'first_match_only': True
+                    },
+                    {
+                        'pattern': r'(?:cisco|Cisco)\s+(\S+)(?:\s+\([\w\s]+\))?\s+processor',
+                        'output_column': 'Model',
+                        'first_match_only': True
+                    },
+                    {
+                        'pattern': r'Processor board ID\s+(\S+)',
+                        'output_column': 'Serial Number',
+                        'first_match_only': True
+                    }
+                ]
             }
         }
     },

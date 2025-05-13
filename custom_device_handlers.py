@@ -841,6 +841,220 @@ class VForceTelnetHandler(CustomDeviceHandler):
                     log.write(f"{'='*50}\n\n")
 
 
+class CiscoLegacyTelnetHandler(CustomDeviceHandler):
+    """Legacy Cisco 장비 Telnet 핸들러 (username 없이 password만 사용)"""
+    
+    def __init__(self, device, timeout=30, session_log_file=None):
+        super().__init__(device, timeout, session_log_file)
+        self.tn = None
+    
+    def connect(self):
+        """텔넷으로 장비에 연결"""
+        if self.device['connection_type'].lower() != 'telnet':
+            raise ValueError("CiscoLegacyTelnetHandler는 텔넷 연결만 지원합니다")
+        
+        self.logger.debug(f"Legacy Cisco 장비 Telnet 접속 시작: {self.device['ip']}")
+        
+        self.tn = telnetlib.Telnet(self.device['ip'], port=self.device['port'], timeout=self.timeout)
+        
+        try:
+            # 초기 접속 시 Password: 프롬프트가 나타날 때까지 대기
+            index, match, text = self.tn.expect([b"Password:", b"Username:"], timeout=20)
+            
+            # 초기 출력 로깅
+            output = text.decode('utf-8', errors='ignore')
+            self.log_output("초기 프롬프트", output)
+            
+            # Password 프롬프트가 먼저 나온 경우 (username이 필요 없는 경우)
+            if index == 0:
+                self.tn.write(self.device['password'].encode('utf-8') + b"\n")
+                time.sleep(2)
+            # Username 프롬프트가 먼저 나온 경우 (일반적인 경우)
+            else:
+                # username이 제공된 경우에만 사용
+                if 'username' in self.device and self.device['username']:
+                    self.tn.write(self.device['username'].encode('utf-8') + b"\n")
+                    time.sleep(1)
+                else:
+                    # username이 제공되지 않은 경우 엔터 키 입력
+                    self.tn.write(b"\n")
+                    time.sleep(1)
+                
+                # Password 입력
+                self.tn.read_until(b"Password:", timeout=10)
+                self.tn.write(self.device['password'].encode('utf-8') + b"\n")
+                time.sleep(2)
+            
+            # 로그인 후 출력 확인
+            output = self.tn.read_very_eager().decode('utf-8', errors='ignore')
+            self.log_output("로그인 후 출력", output)
+            
+            # 로그인 성공 확인 (프롬프트에 > 또는 # 포함 확인)
+            if ">" in output or "#" in output:
+                self.logger.debug(f"로그인 성공: {self.device['ip']}")
+                return True
+            else:
+                # 추가 시간 대기 후 다시 확인
+                time.sleep(3)
+                output = self.tn.read_very_eager().decode('utf-8', errors='ignore')
+                
+                if ">" in output or "#" in output:
+                    self.logger.debug(f"로그인 성공 (추가 대기 후): {self.device['ip']}")
+                    return True
+                else:
+                    self.logger.warning(f"로그인 상태 불확실: {self.device['ip']}")
+                    # 계속 진행
+                    return True
+            
+        except Exception as e:
+            self.logger.error(f"Legacy Cisco Telnet 접속 실패: {str(e)}")
+            if self.session_log_file:
+                with open(self.session_log_file, 'a', encoding='utf-8') as log:
+                    log.write(f"\n접속 실패: {str(e)}\n")
+            
+            # 세션 닫기
+            if self.tn:
+                self.tn.close()
+                self.tn = None
+            
+            raise
+    
+    def enable(self):
+        """특권 모드 진입"""
+        self.logger.debug(f"Legacy Cisco 장비 enable 모드 진입 시도: {self.device['ip']}")
+        
+        try:
+            # 현재 프롬프트 확인
+            self.tn.write(b"\n")
+            time.sleep(1)
+            output = self.tn.read_very_eager().decode('utf-8', errors='ignore')
+            
+            # enable 모드(#)인지 확인
+            if "#" in output:
+                self.logger.debug(f"이미 enable 모드 상태: {self.device['ip']}")
+                self.log_output("현재 프롬프트 (이미 enable 모드)", output)
+                return True
+            
+            # enable 명령 실행
+            self.tn.write(b"enable\n")
+            time.sleep(1)
+            
+            # Password 프롬프트 대기
+            index, match, text = self.tn.expect([b"Password:", b"#"], timeout=5)
+            
+            # Password 프롬프트가 나온 경우
+            if index == 0:
+                # enable_password가 설정된 경우 해당 값 사용, 아니면 기본 password 사용
+                password = self.device.get('enable_password', self.device['password'])
+                self.tn.write(password.encode('utf-8') + b"\n")
+                time.sleep(2)
+            
+            # enable 모드 진입 확인
+            output = self.tn.read_very_eager().decode('utf-8', errors='ignore')
+            self.log_output("enable 명령 실행 후 출력", output)
+            
+            if "#" in output:
+                self.logger.debug(f"enable 모드 진입 성공: {self.device['ip']}")
+                
+                # terminal length 0 설정
+                self.tn.write(b"terminal length 0\n")
+                time.sleep(1)
+                output = self.tn.read_very_eager().decode('utf-8', errors='ignore')
+                self.log_output("terminal length 0 명령 실행 결과", output)
+                
+                return True
+            else:
+                self.logger.warning(f"enable 모드 진입 실패: {self.device['ip']}")
+                return False
+                
+        except Exception as e:
+            self.logger.error(f"enable 모드 진입 중 오류: {str(e)}")
+            return False
+    
+    def send_command(self, command, timeout=None):
+        """명령어 실행"""
+        if timeout is None:
+            timeout = 5
+        
+        self.log_output(f"명령어 실행: {command}", "")
+        
+        try:
+            # 명령어 전송
+            self.tn.write(command.encode('utf-8') + b"\n")
+            time.sleep(timeout)
+            
+            # 결과 읽기
+            output = self.tn.read_very_eager().decode('utf-8', errors='ignore')
+            
+            # 명령어와 프롬프트 제거 처리
+            lines = output.splitlines()
+            
+            # '--More--' 처리
+            full_output = output
+            
+            while "--More--" in full_output:
+                self.tn.write(b" ")  # Space를 보내서 더 보기
+                time.sleep(1)
+                chunk = self.tn.read_very_eager().decode('utf-8', errors='ignore')
+                full_output += chunk
+                
+                # 무한루프 방지 (일정 크기 이상이면 종료)
+                if len(full_output) > 1000000:  # 약 1MB
+                    break
+            
+            # 출력 정리
+            lines = full_output.splitlines()
+            
+            # 첫 줄에 명령어 자체가 있으면 제거
+            if lines and command in lines[0]:
+                lines = lines[1:]
+            
+            # 마지막 줄이 프롬프트인 경우 제거
+            if lines and (lines[-1].strip().endswith(">") or lines[-1].strip().endswith("#")):
+                lines = lines[:-1]
+            
+            # '--More--' 제거
+            cleaned_lines = []
+            for line in lines:
+                if "--More--" in line:
+                    cleaned_line = line.split("--More--")[0]
+                    if cleaned_line:
+                        cleaned_lines.append(cleaned_line)
+                else:
+                    cleaned_lines.append(line)
+            
+            result = "\n".join(cleaned_lines)
+            self.log_output("명령어 결과", result)
+            
+            return result
+            
+        except Exception as e:
+            self.logger.error(f"명령어 실행 실패 ({command}): {str(e)}")
+            return f"Error executing command: {str(e)}"
+    
+    def disconnect(self):
+        """연결 종료"""
+        if self.tn:
+            try:
+                self.tn.write(b"exit\n")
+                time.sleep(1)
+            except:
+                pass
+            
+            try:
+                self.tn.close()
+            except:
+                pass
+            
+            self.tn = None
+            
+            if self.session_log_file:
+                with open(self.session_log_file, 'a', encoding='utf-8') as log:
+                    log.write(f"\n{'='*50}\n")
+                    log.write(f"세션 종료: {datetime.now()}\n")
+                    log.write(f"{'='*50}\n")
+
+
 # 장비 유형에 따른 핸들러 팩토리 함수
 def get_custom_handler(device, timeout=10, session_log_file=None):
     """장비 유형에 맞는 커스텀 핸들러 반환"""
@@ -862,5 +1076,7 @@ def get_custom_handler(device, timeout=10, session_log_file=None):
             return VForceSSHHandler(device, timeout, session_log_file)
         elif connection_type == 'telnet':
             return VForceTelnetHandler(device, timeout, session_log_file)
+    elif vendor == 'cisco' and model == 'legacy':
+        return CiscoLegacyTelnetHandler(device, timeout, session_log_file)
     
     return None

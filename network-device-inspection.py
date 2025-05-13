@@ -93,7 +93,7 @@ class NetworkInspector:
         """엑셀 파일 형식을 검증합니다."""
         try:
             self.logger.debug("엑셀 파일 형식 검증 시작")
-            required_columns = ['ip', 'vendor', 'model', 'connection_type', 'port', 'username', 'password']
+            required_columns = ['ip', 'vendor', 'model', 'connection_type', 'port', 'password']
             
             # 빈 데이터프레임 확인
             if df.empty:
@@ -172,7 +172,7 @@ class NetworkInspector:
         self.logger.debug(f"장비 정보 검증 시작: {device['ip']}")
         
         # 필수 필드 확인
-        required_fields = ['ip', 'vendor', 'model', 'connection_type', 'port', 'username', 'password']
+        required_fields = ['ip', 'vendor', 'model', 'connection_type', 'port', 'password']
         for field in required_fields:
             if field not in device or not device[field]:
                 self.logger.error(f"필수 필드 누락: {field}")
