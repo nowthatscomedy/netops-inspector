@@ -118,7 +118,7 @@ PARSING_RULES = {
     'juniper': {
         'junos': {
             'show version': {
-                'pattern': r'Model:\s+srx\d+.*?\nJunos:\s+([\d\.\-A-Z]+)',
+                'pattern': r'Junos:\s+([\d\.\-A-Z]+)',
                 'output_column': 'Version',
                 'first_match_only': True
             },
@@ -135,7 +135,7 @@ PARSING_RULES = {
                         'first_match_only': True
                     },
                     {
-                        'pattern': r'CB\s+\d+\s+(\S+)\s+',
+                        'pattern': r'Routing Engine\s+\d*\s+(\S+)',
                         'output_column': 'Model',
                         'first_match_only': True
                     }

@@ -9,6 +9,7 @@
 - 장비별 점검 명령어 실행 및 결과 수집
 - 설정 파일 백업 및 세션 로그 저장
 - 결과를 엑셀 파일(`inspection_results.xlsx`)로 저장
+- 점검만 또는 백업만 선택적으로 실행 가능
 
 ## 시스템 요구사항
 
@@ -51,8 +52,13 @@ pip install -r requirements.txt
 python network-device-inspection.py
 ```
 
-3. 결과 확인
-   - `inspection_results.xlsx`: 점검 결과
+3. 실행 옵션 선택
+   - 1: 점검만 실행
+   - 2: 백업만 실행
+   - 3: 점검과 백업 모두 실행
+
+4. 결과 확인
+   - `inspection_results_YYYYMMDD_HHMMSS.xlsx`: 점검 결과
    - `backup/YYYYMMDD_HHMMSS/`: 설정 백업 파일
    - `session_logs/YYYYMMDD_HHMMSS/`: 세션 로그 파일
    - `logs/`: 프로그램 실행 로그
@@ -67,8 +73,10 @@ python network-device-inspection.py
 │   └── YYYYMMDD_HHMMSS/      # 실행별 세션 로그 폴더
 ├── logs/                     # 프로그램 로그 저장
 ├── devices.xlsx              # 장비 정보 입력 파일
-├── inspection_results.xlsx   # 점검 결과 파일
-└── network-device-inspection.py  # 메인 프로그램
+├── inspection_results_YYYYMMDD_HHMMSS.xlsx   # 점검 결과 파일
+├── network-device-inspection.py  # 메인 프로그램
+├── device_commands.py        # 장비별 명령어 정의 및 파싱 규칙
+└── custom_device_handlers.py # 커스텀 장비 핸들러
 ```
 
 ## 입력 데이터 검증
@@ -101,9 +109,21 @@ python network-device-inspection.py
   - IOS
   - IOS-XE
 - Juniper
-  - JunOS
+  - JunOS (SRX 시리즈 등 모든 Juniper 장비)
 - Ubiquoss
   - E4020
+- Axgate
+  - Axgate
+- NexG
+  - VForce
+
+## 최근 변경 사항
+
+- Juniper SRX300 모델을 JunOS로 통일하여 모든 Juniper 장비에 대한 일관된 처리 지원
+- Axgate-80D 모델을 Axgate로 통일하여 Axgate 장비 처리 간소화
+- 파싱 결과 중복 문제 해결 (특히 Juniper 장비)
+- 점검 또는 백업 모드만 단독으로 실행 시 불필요한 명령어 실행 방지
+- 다양한 Juniper 장비 모델에 대한 파싱 패턴 개선
 
 ## 라이선스
 
