@@ -5,26 +5,21 @@ INSPECTION_COMMANDS = {
     'cisco': {
         'ios': [
             'show version',
-            'show interfaces status',
-            'show ip interface brief',
+
             'show running-config'
         ],
         'ios-xe': [
             'show version',
-            'show interfaces status',
-            'show ip interface brief',
             'show running-config'
         ]
     },
     'juniper': {
         'junos': [
             'show version',
-            'show interfaces terse',
             'show configuration'
         ],
         'srx300': [
             'show version',
-            'show interfaces terse',
             'show system uptime',
             'show chassis hardware',
             'show configuration'
@@ -33,7 +28,6 @@ INSPECTION_COMMANDS = {
     'ubiquoss': {
         'e4020': [
             'show version',
-            'show ip interface brief',
             'show running-config'
         ]
     },
@@ -78,11 +72,7 @@ PARSING_RULES = {
         'ios': {
             'show version': {
                 'pattern': r'Cisco IOS Software.*Version\s+([^\s,]+)',
-                'output_column': 'IOS Version'
-            },
-            'show interfaces status': {
-                'pattern': r'(\S+)\s+connected\s+\d+\s+\S+\s+\S+\s+\S+',
-                'output_column': 'Connected Interfaces'
+                'output_column': 'Version'
             }
         }
     },
@@ -91,10 +81,6 @@ PARSING_RULES = {
             'show version': {
                 'pattern': r'Version\s+([^\s,]+)',
                 'output_column': 'Version'
-            },
-            'show ip interface brief': {
-                'pattern': r'(\S+)\s+(?:\d+\.\d+\.\d+\.\d+|unassigned)\s+up\s+up',
-                'output_column': 'Connected Interfaces'
             }
         }
     },
@@ -134,25 +120,17 @@ PARSING_RULES = {
         'junos': {
             'show version': {
                 'pattern': r'Junos:\s+([^\s,]+)',
-                'output_column': 'Junos Version'
-            },
-            'show interfaces terse': {
-                'pattern': r'(\S+)\s+up\s+up',
-                'output_column': 'Connected Interfaces'
+                'output_column': 'Version'
             }
         },
         'srx300': {
             'show version': {
                 'pattern': r'Junos:\s+([^\s,]+)',
-                'output_column': 'Junos Version'
-            },
-            'show interfaces terse': {
-                'pattern': r'(\S+)\s+up\s+up',
-                'output_column': 'Connected Interfaces'
+                'output_column': 'Version'
             },
             'show system uptime': {
                 'pattern': r'System booted:\s+(.+?)(?:\n|\r\n)',
-                'output_column': 'Boot Time'
+                'output_column': 'Uptime'
             },
             'show chassis hardware': {
                 'patterns': [
