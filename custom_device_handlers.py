@@ -48,7 +48,7 @@ class CustomDeviceHandler:
         """백업 파일명 생성"""
         return os.path.join(
             backup_dir,
-            f"{self.device['ip']}_{self.device['vendor']}_{self.device['model']}.txt"
+            f"{self.device['ip']}_{self.device['vendor']}_{self.device['OS']}.txt"
         )
 
 
@@ -1059,7 +1059,7 @@ class CiscoLegacyTelnetHandler(CustomDeviceHandler):
 def get_custom_handler(device, timeout=10, session_log_file=None):
     """장비 유형에 맞는 커스텀 핸들러 반환"""
     vendor = device.get('vendor', '').lower()
-    model = device.get('model', '').lower()
+    model = device.get('OS', '').lower()
     connection_type = device.get('connection_type', '').lower()
     
     # 유비쿼스 E4020 장비 처리

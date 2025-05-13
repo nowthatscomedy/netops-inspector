@@ -43,7 +43,7 @@ pip install -r requirements.txt
 ## 사용 방법
 
 1. `devices.xlsx` 파일에 장비 정보 입력
-   - 필수 컬럼: ip, vendor, model, connection_type, port, password
+   - 필수 컬럼: ip, vendor, OS, connection_type, port, password
    - 선택 컬럼: username (레거시 Cisco 장비와 같이 username을 사용하지 않는 장비의 경우 빈 값 허용)
    - connection_type: ssh 또는 telnet
    - port: SSH(22) 또는 Telnet(23)의 기본 포트 사용 가능, 그 외 포트는 1024-65535 범위 내에서 지정
@@ -121,6 +121,7 @@ python network-device-inspection.py
 
 ## 최근 변경 사항
 
+- 필수 컬럼 명칭을 'model'에서 'OS'로 변경
 - 레거시 Cisco 스위치 지원 추가 (username 없이 password만으로 접속)
 - username 필드를 필수가 아닌 선택적 필드로 변경
 - Juniper SRX300 모델을 JunOS로 통일하여 모든 Juniper 장비에 대한 일관된 처리 지원
