@@ -21,6 +21,13 @@ INSPECTION_COMMANDS = {
             'show version',
             'show interfaces terse',
             'show configuration'
+        ],
+        'srx300': [
+            'show version',
+            'show interfaces terse',
+            'show system uptime',
+            'show chassis hardware',
+            'show configuration'
         ]
     },
     'ubiquoss': {
@@ -35,6 +42,12 @@ INSPECTION_COMMANDS = {
             'show system version',
             'show running-config'
         ]
+    },
+    'nexg': {
+        'vforce': [
+            'show version',
+            'show running-config'
+        ]
     }
 }
 
@@ -45,13 +58,17 @@ BACKUP_COMMANDS = {
         'ios-xe': 'show running-config'
     },
     'juniper': {
-        'junos': 'show configuration | display set'
+        'junos': 'show configuration | display set',
+        'srx300': 'show configuration | display set'
     },
     'ubiquoss': {
         'e4020': 'show running-config'
     },
     'axgate': {
         'axgate-80d': 'show running-config'
+    },
+    'nexg': {
+        'vforce': 'show running-config'
     }
 }
 
@@ -87,8 +104,67 @@ PARSING_RULES = {
                 'pattern': r'OS:\s+(aos v[^\r\n]+)',
                 'output_column': 'Version'
             },
-            'show running-config': {
-                'output_column': 'Configuration'
+        }
+    },
+    'nexg': {
+        'vforce': {
+            'show version': {
+                'patterns': [
+                    {
+                        'pattern': r'NexG VForce Software, Version\s+([^\s\r\n]+)',
+                        'output_column': 'Version'
+                    },
+                    {
+                        'pattern': r'(\S+)\s+uptime is\s+([^\r\n]+)',
+                        'output_columns': ['Hostname', 'Uptime']
+                    },
+                    {
+                        'pattern': r'NexG\s+(\S+)\s+\(',
+                        'output_column': 'Model'
+                    },
+                    {
+                        'pattern': r'Processor board serial number\s+(\S+)',
+                        'output_column': 'Serial Number'
+                    }
+                ]
+            }
+        }
+    },
+    'juniper': {
+        'junos': {
+            'show version': {
+                'pattern': r'Junos:\s+([^\s,]+)',
+                'output_column': 'Junos Version'
+            },
+            'show interfaces terse': {
+                'pattern': r'(\S+)\s+up\s+up',
+                'output_column': 'Connected Interfaces'
+            }
+        },
+        'srx300': {
+            'show version': {
+                'pattern': r'Junos:\s+([^\s,]+)',
+                'output_column': 'Junos Version'
+            },
+            'show interfaces terse': {
+                'pattern': r'(\S+)\s+up\s+up',
+                'output_column': 'Connected Interfaces'
+            },
+            'show system uptime': {
+                'pattern': r'System booted:\s+(.+?)(?:\n|\r\n)',
+                'output_column': 'Boot Time'
+            },
+            'show chassis hardware': {
+                'patterns': [
+                    {
+                        'pattern': r'Chassis\s+\S*\s+\S*\s+(\S+)\s+SRX300',
+                        'output_column': 'Serial Number'
+                    },
+                    {
+                        'pattern': r'Chassis\s+\S*\s+\S*\s+\S+\s+(SRX\d+)',
+                        'output_column': 'Model'
+                    }
+                ]
             }
         }
     }

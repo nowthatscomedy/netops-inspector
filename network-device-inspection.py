@@ -11,11 +11,8 @@ import ipaddress
 import socket
 import time
 import logging
-from pathlib import Path
-import sys
 import traceback
 from concurrent.futures import ThreadPoolExecutor, as_completed
-import subprocess
 import telnetlib
 from custom_device_handlers import get_custom_handler
 
@@ -242,23 +239,64 @@ class NetworkInspector:
         """명령어 출력을 파싱합니다."""
         self.logger.debug(f"명령어 출력 파싱 시작: {command}")
         result = {}
-        try:
-            rules = PARSING_RULES[vendor.lower()][model.lower()][command]
-            column = rules['output_column']
+        
+        # 먼저 해당 벤더/모델/명령어에 대한 파싱 규칙이 존재하는지 확인
+        vendor_lower = str(vendor).lower()
+        model_lower = str(model).lower()
+        
+        # PARSING_RULES에 해당 벤더가 없는 경우
+        if vendor_lower not in PARSING_RULES:
+            self.logger.debug(f"파싱 규칙 없음 (벤더): {vendor}")
+            return result
             
-            # 패턴이 있는 경우에만 정규식 파싱 수행
+        # PARSING_RULES에 해당 모델이 없는 경우
+        if model_lower not in PARSING_RULES[vendor_lower]:
+            self.logger.debug(f"파싱 규칙 없음 (모델): {model}")
+            return result
+            
+        # PARSING_RULES에 해당 명령어가 없는 경우
+        if command not in PARSING_RULES[vendor_lower][model_lower]:
+            self.logger.debug(f"파싱 규칙 없음 (명령어): {command}")
+            return result
+        
+        try:
+            rules = PARSING_RULES[vendor_lower][model_lower][command]
+            
+            # 단일 패턴인 경우
             if 'pattern' in rules:
                 pattern = rules['pattern']
+                column = rules['output_column']
                 matches = re.finditer(pattern, output, re.MULTILINE)
                 values = [match.group(1) for match in matches]
                 result[column] = ', '.join(values)
+            # 여러 패턴인 경우
+            elif 'patterns' in rules:
+                for pattern_rule in rules['patterns']:
+                    pattern = pattern_rule['pattern']
+                    matches = list(re.finditer(pattern, output, re.MULTILINE))
+                    
+                    # 여러 컬럼에 매핑하는 경우 (그룹이 여러 개)
+                    if 'output_columns' in pattern_rule and matches:
+                        columns = pattern_rule['output_columns']
+                        for i, col in enumerate(columns):
+                            # 인덱스는 1부터 시작 (그룹 0은 전체 매치)
+                            group_idx = i + 1
+                            if group_idx < len(matches[0].groups()) + 1:
+                                result[col] = matches[0].group(group_idx)
+                    # 단일 컬럼에 매핑하는 경우
+                    elif 'output_column' in pattern_rule and matches:
+                        column = pattern_rule['output_column']
+                        values = [match.group(1) for match in matches]
+                        result[column] = ', '.join(values)
             else:
                 # 패턴이 없는 경우 전체 출력을 그대로 사용
-                result[column] = output.strip()
+                if 'output_column' in rules:
+                    result[rules['output_column']] = output.strip()
                 
             self.logger.debug(f"파싱 결과: {result}")
         except (KeyError, AttributeError) as e:
             self.logger.warning(f"파싱 실패: {str(e)}")
+            self.logger.debug(f"파싱 실패 예외 상세: {traceback.format_exc()}")
         return result
     
     def _test_tcping(self, ip: str, port: int, timeout: int = 5) -> bool:
@@ -316,14 +354,17 @@ class NetworkInspector:
                     elif device['vendor'].lower() == 'axgate' and device['model'].lower() == 'axgate-80d':
                         device_type = 'generic_telnet'
                     else:
-                        device_type = f"{device['vendor']}_{device['model']}_telnet"
+                        device_type = f"{str(device['vendor']).lower()}_{str(device['model']).lower()}_telnet"
                 else:
                     if device['vendor'].lower() == 'ubiquoss' and device['model'].lower() == 'e4020':
                         device_type = 'generic'
                     elif device['vendor'].lower() == 'axgate' and device['model'].lower() == 'axgate-80d':
                         device_type = 'generic'
+                    elif device['vendor'].lower() == 'juniper':
+                        # Juniper 장비는 'juniper_junos' device_type 사용
+                        device_type = 'juniper_junos'
                     else:
-                        device_type = f"{device['vendor']}_{device['model']}"
+                        device_type = f"{str(device['vendor']).lower()}_{str(device['model']).lower()}"
 
                 # 커스텀 핸들러 사용 시도
                 custom_handler = get_custom_handler(device, self.timeout, session_log_file)
@@ -689,15 +730,30 @@ class NetworkInspector:
                                 return device, {"error": f"Axgate-80D Telnet 접속 실패: {str(e)}"}
 
                 # 일반 장비 접속 (Netmiko 사용)
+                # device 객체의 주요 필드 문자열 변환
+                safe_device = {
+                    'ip': str(device['ip']),
+                    'vendor': str(device['vendor']),
+                    'model': str(device['model']),
+                    'username': str(device['username']),
+                    'password': str(device['password']),
+                    'port': int(device['port']),
+                    'connection_type': str(device['connection_type'])
+                }
+                
+                # enable_password가 있는 경우 추가
+                if 'enable_password' in device and device['enable_password']:
+                    safe_device['enable_password'] = str(device['enable_password'])
+                
                 connection_params = {
-                    'device_type': device_type,
-                    'host': device['ip'],
-                    'username': device['username'],
-                    'password': device['password'],
-                    'port': device['port'],
-                    'secret': device.get('enable_password', ''),
-                    'timeout': self.timeout,
-                    'session_log': session_log_file,
+                    'device_type': str(device_type),
+                    'host': str(safe_device['ip']),
+                    'username': str(safe_device['username']),
+                    'password': str(safe_device['password']),
+                    'port': int(safe_device['port']),
+                    'secret': str(safe_device.get('enable_password', '')),
+                    'timeout': int(self.timeout),
+                    'session_log': str(session_log_file),
                     'fast_cli': False
                 }
 
