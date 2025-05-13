@@ -16,10 +16,6 @@ INSPECTION_COMMANDS = {
     'juniper': {
         'junos': [
             'show version',
-            'show configuration'
-        ],
-        'srx300': [
-            'show version',
             'show system uptime',
             'show chassis hardware',
             'show configuration'
@@ -28,11 +24,11 @@ INSPECTION_COMMANDS = {
     'ubiquoss': {
         'e4020': [
             'show version',
-            'show running-config'
+            'show system'
         ]
     },
     'axgate': {
-        'axgate-80d': [
+        'axgate': [
             'show system version',
             'show running-config'
         ]
@@ -52,14 +48,13 @@ BACKUP_COMMANDS = {
         'ios-xe': 'show running-config'
     },
     'juniper': {
-        'junos': 'show configuration | display set',
-        'srx300': 'show configuration | display set'
+        'junos': 'show configuration | display set'
     },
     'ubiquoss': {
         'e4020': 'show running-config'
     },
     'axgate': {
-        'axgate-80d': 'show running-config'
+        'axgate': 'show running-config'
     },
     'nexg': {
         'vforce': 'show running-config'
@@ -85,11 +80,11 @@ PARSING_RULES = {
         }
     },
     'axgate': {
-        'axgate-80d': {
+        'axgate': {
             'show system version': {
-                'pattern': r'OS:\s+(aos v[^\r\n]+)',
+                'pattern': r'Version\s+:\s+(.*)',
                 'output_column': 'Version'
-            },
+            }
         }
     },
     'nexg': {
@@ -97,19 +92,23 @@ PARSING_RULES = {
             'show version': {
                 'patterns': [
                     {
-                        'pattern': r'NexG VForce Software, Version\s+([^\s\r\n]+)',
+                        'pattern': r'Version\s+:\s+([\d\.]+)',
                         'output_column': 'Version'
                     },
                     {
-                        'pattern': r'(\S+)\s+uptime is\s+([^\r\n]+)',
-                        'output_columns': ['Hostname', 'Uptime']
+                        'pattern': r'Hostname\s+:\s+(\S+)',
+                        'output_column': 'Hostname'
                     },
                     {
-                        'pattern': r'NexG\s+(\S+)\s+\(',
+                        'pattern': r'Uptime\s+:\s+(.*)',
+                        'output_column': 'Uptime'
+                    },
+                    {
+                        'pattern': r'Model\s+:\s+(\S+)',
                         'output_column': 'Model'
                     },
                     {
-                        'pattern': r'Processor board serial number\s+(\S+)',
+                        'pattern': r'Serial Number\s+:\s+(\S+)',
                         'output_column': 'Serial Number'
                     }
                 ]
@@ -119,30 +118,56 @@ PARSING_RULES = {
     'juniper': {
         'junos': {
             'show version': {
-                'pattern': r'Junos:\s+([^\s,]+)',
-                'output_column': 'Version'
-            }
-        },
-        'srx300': {
-            'show version': {
-                'pattern': r'Junos:\s+([^\s,]+)',
-                'output_column': 'Version'
+                'pattern': r'Model:\s+srx\d+.*?\nJunos:\s+([\d\.\-A-Z]+)',
+                'output_column': 'Version',
+                'first_match_only': True
             },
             'show system uptime': {
-                'pattern': r'System booted:\s+(.+?)(?:\n|\r\n)',
-                'output_column': 'Uptime'
+                'pattern': r'System booted:\s+(.*?\))',
+                'output_column': 'Uptime',
+                'first_match_only': True
             },
             'show chassis hardware': {
                 'patterns': [
                     {
-                        'pattern': r'Chassis\s+\S*\s+\S*\s+(\S+)\s+SRX300',
-                        'output_column': 'Serial Number'
+                        'pattern': r'Chassis\s+(\S+)\s+',
+                        'output_column': 'Serial Number',
+                        'first_match_only': True
                     },
                     {
-                        'pattern': r'Chassis\s+\S*\s+\S*\s+\S+\s+(SRX\d+)',
-                        'output_column': 'Model'
+                        'pattern': r'CB\s+\d+\s+(\S+)\s+',
+                        'output_column': 'Model',
+                        'first_match_only': True
                     }
                 ]
+            }
+        }
+    },
+    'ubiquoss': {
+        'e4020': {
+            'show version': {
+                'patterns': [
+                    {
+                        'pattern': r'SW Version\s+:\s+([\d\.]+)',
+                        'output_column': 'Version'
+                    },
+                    {
+                        'pattern': r'HW Version\s+:\s+([\d\.]+)',
+                        'output_column': 'HW Version'
+                    },
+                    {
+                        'pattern': r'System Name\s+:\s+(\S+)',
+                        'output_column': 'Hostname'
+                    },
+                    {
+                        'pattern': r'Switch Serial No\s+:\s+(\S+)',
+                        'output_column': 'Serial Number'
+                    }
+                ]
+            },
+            'show system': {
+                'pattern': r'Up Time\s+:\s+(.*)',
+                'output_column': 'Uptime'
             }
         }
     }
