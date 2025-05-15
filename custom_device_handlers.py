@@ -48,7 +48,7 @@ class CustomDeviceHandler:
         """백업 파일명 생성"""
         return os.path.join(
             backup_dir,
-            f"{self.device['ip']}_{self.device['vendor']}_{self.device['OS']}.txt"
+            f"{self.device['ip']}_{self.device['vendor']}_{self.device['os']}.txt"
         )
 
 
@@ -205,266 +205,172 @@ class AxgateHandler(CustomDeviceHandler):
 
 
 class AxgateSSHHandler(CustomDeviceHandler):
-    """Axgate SSH 장비 핸들러"""
+    """Axgate 장비 SSH 핸들러"""
     
     def __init__(self, device, timeout=30, session_log_file=None):
         super().__init__(device, timeout, session_log_file)
         self.ssh = None
         self.channel = None
-    
+        
     def connect(self):
         """SSH로 장비에 연결"""
         if self.device['connection_type'].lower() != 'ssh':
             raise ValueError("AxgateSSHHandler는 SSH 연결만 지원합니다")
         
         self.logger.debug(f"Axgate 장비 SSH 접속 시작: {self.device['ip']}")
-
-        # 디버깅을 위한 기본 연결 정보 출력
-        self.logger.debug(f"연결 정보 - IP: {self.device['ip']}, PORT: {self.device['port']}, USER: {self.device['username']}")
-        
-        # paramiko 세부 로깅 활성화
-        logging.getLogger('paramiko').setLevel(logging.DEBUG)
         
         try:
-            # 소켓 및 Transport 설정 (사용자 이름 직접 처리)
-            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            sock.settimeout(self.timeout)
-            sock.connect((self.device['ip'], int(self.device['port'])))
+            # SSH 클라이언트 생성
+            self.ssh = paramiko.SSHClient()
+            self.ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
             
-            # Transport 설정
-            transport = paramiko.Transport(sock)
-            transport.start_client()
-            
-            # 사용자 이름 전달 (자동 처리)
-            transport.auth_none(str(self.device['username']))
+            # 연결
+            self.ssh.connect(
+                self.device['ip'],
+                port=int(self.device['port']),
+                username=self.device['username'],
+                password=self.device['password'],
+                look_for_keys=False,
+                allow_agent=False,
+                timeout=self.timeout
+            )
             
             # 채널 생성
-            self.channel = transport.open_session()
-            self.channel.get_pty()
-            self.channel.invoke_shell()
+            self.channel = self.ssh.invoke_shell()
             self.channel.settimeout(self.timeout)
             
-            # 초기 응답 확인 (비밀번호 프롬프트 대기)
+            # 초기 출력 읽기
             time.sleep(2)
             output = self._read_channel()
-            self.log_output("초기 응답", output)
+            self.log_output("SSH 초기 접속 출력", output)
             
-            # 비밀번호 프롬프트 확인 및 입력
-            if "Password:" in output or "password:" in output:
-                self.logger.debug("비밀번호 프롬프트 확인됨")
-                self.channel.send(str(self.device['password']) + "\n")
-                time.sleep(2)
-            else:
-                self.logger.warning("비밀번호 프롬프트가 없습니다. 직접 비밀번호 전송 시도")
-                self.channel.send(str(self.device['password']) + "\n")
-                time.sleep(2)
+            return True
             
-            # 로그인 성공 확인
-            output = self._read_channel()
-            self.log_output("비밀번호 입력 후 응답", output)
+        except socket.timeout:
+            self.logger.error(f"Axgate SSH 접속 타임아웃: {self.device['ip']}")
             
-            # 로그인 성공 여부 확인 (프롬프트 확인)
-            if "#" in output or ">" in output:
-                self.logger.debug(f"로그인 성공: {self.device['ip']}")
-                return True
-            else:
-                # 추가 출력 확인
-                time.sleep(2)
-                extra_output = self._read_channel()
-                self.log_output("추가 대기 후 응답", extra_output)
-                
-                if "#" in extra_output or ">" in extra_output:
-                    self.logger.debug(f"추가 대기 후 로그인 성공: {self.device['ip']}")
-                    return True
-                else:
-                    # 로그인 성공 여부 불확실하지만 계속 진행
-                    self.logger.info("프롬프트를 찾을 수 없지만 계속 진행합니다")
-                    return True
-            
-        except Exception as e:
-            self.logger.error(f"Axgate SSH 연결 실패: {str(e)}")
             if self.session_log_file:
                 with open(self.session_log_file, 'a', encoding='utf-8') as log:
-                    log.write(f"\nSSH 연결 실패: {str(e)}\n")
-                    log.write(f"상세 정보: {traceback.format_exc()}\n")
-                    log.write("-"*50 + "\n")
+                    log.write(f"\nSSH 접속 타임아웃: {self.device['ip']}\n")
+            
+            raise ValueError(f"SSH 접속 타임아웃: {self.device['ip']}")
+            
+        except Exception as e:
+            self.logger.error(f"Axgate SSH 접속 실패: {str(e)}")
+            
+            if self.session_log_file:
+                with open(self.session_log_file, 'a', encoding='utf-8') as log:
+                    log.write(f"\nSSH 접속 실패: {str(e)}\n")
+                    
             raise
     
     def _read_channel(self):
-        """채널에서 데이터를 읽어 문자열로 반환합니다."""
+        """SSH 채널에서 데이터 읽기"""
         output = ""
+        if self.channel is None:
+            return output
+        
         try:
-            if self.channel.recv_ready():
-                while self.channel.recv_ready():
-                    chunk = self.channel.recv(4096)
-                    output += chunk.decode('utf-8', 'ignore')
-                    time.sleep(0.1)
-        except Exception as e:
-            self.logger.warning(f"채널 읽기 중 오류: {str(e)}")
+            while self.channel.recv_ready():
+                output += self.channel.recv(65535).decode('utf-8', errors='ignore')
+        except:
+            pass
+        
         return output
     
     def _read_until_pattern(self, patterns, timeout=20):
-        """특정 패턴이 나타날 때까지 채널에서 데이터를 읽습니다"""
-        start_time = time.time()
-        buffer = b""
+        """특정 패턴이 나올 때까지 출력 읽기"""
+        if self.channel is None:
+            return "", -1
         
-        while time.time() - start_time < timeout:
-            try:
-                if self.channel.recv_ready():
-                    chunk = self.channel.recv(4096)
-                    buffer += chunk
-                    
-                    # 패턴 검사
-                    for pattern in patterns:
-                        if pattern in buffer:
-                            return buffer
-            except Exception as e:
-                self.logger.warning(f"패턴 읽기 중 오류: {str(e)}")
-                return buffer
+        output = ""
+        pattern_index = -1
+        
+        end_time = time.time() + timeout
+        while time.time() < end_time:
+            # 채널에서 데이터를 읽을 수 있는지 확인
+            if self.channel.recv_ready():
+                chunk = self.channel.recv(65535).decode('utf-8', errors='ignore')
+                output += chunk
+                
+                # 패턴 확인
+                for i, pattern in enumerate(patterns):
+                    if re.search(pattern, output):
+                        pattern_index = i
+                        return output, pattern_index
             
-            time.sleep(0.1)
+            time.sleep(0.1)  # CPU 사용량 줄이기 위한 짧은 대기
         
-        # 타임아웃 발생
-        return buffer
+        return output, pattern_index
     
     def enable(self):
-        """특권 모드 진입 - Axgate는 enable 명령어가 필요 없음"""
-        self.logger.debug(f"Axgate는 enable 명령어가 필요 없음: {self.device['ip']}")
+        """특권 모드 진입 - Axgate는 이미 특권 모드로 로그인됨"""
+        self.logger.debug(f"Axgate SSH는 enable 명령어가 필요 없음: {self.device['ip']}")
         
         # 로그에 기록
         if self.session_log_file:
             with open(self.session_log_file, 'a', encoding='utf-8') as log:
-                log.write("\nAxgate는 enable 명령어가 필요 없음\n")
+                log.write("\nAxgate SSH는 enable 명령어가 필요 없음\n")
                 log.write("-"*50 + "\n")
-                
-        # 현재 프롬프트 확인
-        try:
-            self.channel.send("\n")
-            time.sleep(0.5)
-            output = self._read_channel()
-            
-            # '>' 프롬프트이면 enable 모드로 전환 시도
-            if ">" in output and "#" not in output:
-                self.logger.debug("일반 모드(>)에서 특권 모드(#)로 전환 시도")
-                self.channel.send("enable\n")
-                time.sleep(1)
-                
-                # enable 비밀번호 프롬프트 확인
-                output = self._read_channel()
-                if "Password:" in output:
-                    # enable 비밀번호 전송
-                    if self.device.get('enable_password'):
-                        enable_pwd = self.device['enable_password']
-                    else:
-                        enable_pwd = self.device['password']
-                    
-                    self.channel.send(str(enable_pwd) + "\n")
-                    time.sleep(1)
-                    
-                    # 프롬프트 확인
-                    output = self._read_channel()
-                    if "#" in output:
-                        self.logger.debug("특권 모드 전환 성공")
-                    else:
-                        self.logger.warning("특권 모드 전환 실패")
-        except Exception as e:
-            self.logger.warning(f"특권 모드 전환 확인 중 오류: {str(e)}")
     
     def send_command(self, command, timeout=None):
         """명령어 실행"""
         if timeout is None:
-            timeout = 5  # SSH는 기본 타임아웃을 조금 더 길게 설정
+            timeout = 10  # 기본 타임아웃 값
+        
+        if self.channel is None:
+            raise ValueError("SSH 채널이 초기화되지 않았습니다")
         
         self.log_output(f"명령어 실행: {command}", "")
         
-        try:
-            # 채널 초기화 (기존 출력 비우기)
-            self._read_channel()
-            
-            # 명령어 전송
-            self.channel.send(command + "\n")
-            
-            # 명령어 실행 결과 대기
-            time.sleep(timeout)
-            
-            # 출력 수집
-            output = self._read_channel()
-            
-            # 명령어 및 프롬프트 제거 로직
-            lines = output.splitlines()
-            
-            # 'show running-config'와 같은 페이징 명령어를 위한 처리
-            if '--More--' in output:
-                self.logger.debug("페이징 명령어 감지됨, 전체 출력 수집")
-                # 스페이스바를 전송하여 다음 페이지 요청
-                full_output = output
-                max_pages = 50  # 안전을 위한 최대 페이지 수 제한
-                
-                for _ in range(max_pages):
-                    if '--More--' in full_output:
-                        # 스페이스바 전송
-                        self.channel.send(" ")
-                        time.sleep(1)
-                        page_output = self._read_channel()
-                        full_output += page_output
-                    else:
-                        break
-                
-                # 전체 출력을 라인 단위로 분할
-                lines = full_output.splitlines()
-            
-            # 출력 처리
-            if len(lines) > 0:
-                # 첫 줄은 명령어 자체이거나 빈 줄일 수 있으므로 검사
-                if command.strip() in lines[0]:
-                    lines = lines[1:]  # 명령어 줄 제거
-                
-                # 마지막 줄이 프롬프트인지 확인
-                if lines and ('#' in lines[-1] or '>' in lines[-1]):
-                    lines = lines[:-1]  # 프롬프트 줄 제거
-                
-                # '--More--' 표시가 있는 줄 정리
-                clean_lines = []
-                for line in lines:
-                    # '--More--' 제거하고 해당 줄의 나머지 부분만 유지
-                    if '--More--' in line:
-                        clean_line = line.split('--More--')[0].strip()
-                        if clean_line:  # 빈 줄이 아니면 추가
-                            clean_lines.append(clean_line)
-                    else:
-                        clean_lines.append(line)
-                
-                # 정리된 출력 합치기
-                cleaned_output = "\n".join(clean_lines)
-            else:
-                cleaned_output = ""
-            
-            self.log_output("출력", cleaned_output)
-            
-            return cleaned_output
-        except Exception as e:
-            self.logger.error(f"명령어 실행 중 오류: {str(e)}")
-            self.log_output("명령어 실행 오류", str(e))
-            return f"명령어 실행 오류: {str(e)}"
+        # 버퍼 비우기
+        output = self._read_channel()
+        
+        # 명령어 전송
+        self.channel.send(command + "\n")
+        time.sleep(1)  # 명령어 전송 후 잠시 대기
+        
+        # 결과 수집 (타임아웃 2배로 설정)
+        output, _ = self._read_until_pattern([r"[>#]"], timeout=timeout*2)
+        
+        # 출력 정리 - 명령어 자체와 프롬프트 제거
+        lines = output.splitlines()
+        if lines and command in lines[0]:
+            lines = lines[1:]
+        
+        # 마지막 줄이 프롬프트인 경우 제거
+        if lines and (re.search(r"[>#]$", lines[-1].strip())):
+            lines = lines[:-1]
+        
+        result = "\n".join(lines)
+        self.log_output("명령어 결과", result)
+        
+        return result
     
     def disconnect(self):
         """SSH 연결 종료"""
-        try:
-            if self.channel:
+        if self.channel:
+            try:
+                self.channel.send("exit\n")
+                time.sleep(1)
                 self.channel.close()
-                
-            # Transport 종료
-            if self.channel and self.channel.get_transport():
-                self.channel.get_transport().close()
-                
-            # 세션 로그 종료
-            if self.session_log_file:
-                with open(self.session_log_file, 'a', encoding='utf-8') as log:
-                    log.write(f"\n{'='*50}\n")
-                    log.write(f"세션 완료 - {datetime.now()}\n")
-                    log.write(f"{'='*50}\n\n")
-        except Exception as e:
-            self.logger.warning(f"연결 종료 중 오류: {str(e)}")
+            except:
+                pass
+            self.channel = None
+        
+        if self.ssh:
+            try:
+                self.ssh.close()
+            except:
+                pass
+            self.ssh = None
+        
+        # 세션 로그 종료
+        if self.session_log_file:
+            with open(self.session_log_file, 'a', encoding='utf-8') as log:
+                log.write(f"\n{'='*50}\n")
+                log.write(f"세션 완료 - {datetime.now()}\n")
+                log.write(f"{'='*50}\n\n")
 
 
 class VForceSSHHandler(CustomDeviceHandler):
@@ -1059,7 +965,7 @@ class CiscoLegacyTelnetHandler(CustomDeviceHandler):
 def get_custom_handler(device, timeout=10, session_log_file=None):
     """장비 유형에 맞는 커스텀 핸들러 반환"""
     vendor = device.get('vendor', '').lower()
-    model = device.get('OS', '').lower()
+    model = device.get('os', '').lower()
     connection_type = device.get('connection_type', '').lower()
     
     # 유비쿼스 E4020 장비 처리

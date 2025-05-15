@@ -93,7 +93,8 @@ class NetworkInspector:
         """엑셀 파일 형식을 검증합니다."""
         try:
             self.logger.debug("엑셀 파일 형식 검증 시작")
-            required_columns = ['ip', 'vendor', 'OS', 'connection_type', 'port', 'password']
+            # 필수 컬럼 리스트도 소문자로 통일
+            required_columns = ['ip', 'vendor', 'os', 'connection_type', 'port', 'password']
             
             # 빈 데이터프레임 확인
             if df.empty:
@@ -172,7 +173,7 @@ class NetworkInspector:
         self.logger.debug(f"장비 정보 검증 시작: {device['ip']}")
         
         # 필수 필드 확인
-        required_fields = ['ip', 'vendor', 'OS', 'connection_type', 'port', 'password']
+        required_fields = ['ip', 'vendor', 'os', 'connection_type', 'port', 'password']
         for field in required_fields:
             if field not in device or not device[field]:
                 self.logger.error(f"필수 필드 누락: {field}")
@@ -180,7 +181,7 @@ class NetworkInspector:
 
         # 소문자 변환
         vendor = str(device['vendor']).lower()
-        model = str(device['OS']).lower()
+        model = str(device['os']).lower()
 
         # IP 주소 검증
         if not self._validate_ip(device['ip']):
@@ -203,11 +204,11 @@ class NetworkInspector:
                 self.logger.error(f"지원하지 않는 벤더: {device['vendor']}")
                 return False, f"지원하지 않는 벤더: {device['vendor']}"
             if model not in INSPECTION_COMMANDS[vendor]:
-                self.logger.error(f"지원하지 않는 모델: {device['OS']}")
-                return False, f"지원하지 않는 모델: {device['OS']}"
+                self.logger.error(f"지원하지 않는 모델: {device['os']}")
+                return False, f"지원하지 않는 모델: {device['os']}"
         except KeyError:
-            self.logger.error(f"잘못된 장비 구성: {device['vendor']} {device['OS']}")
-            return False, f"잘못된 장비 구성: {device['vendor']} {device['OS']}"
+            self.logger.error(f"잘못된 장비 구성: {device['vendor']} {device['os']}")
+            return False, f"잘못된 장비 구성: {device['vendor']} {device['os']}"
 
         self.logger.debug(f"장비 정보 검증 완료: {device['ip']}")
         return True, ""
@@ -301,6 +302,26 @@ class NetworkInspector:
                             group_idx = i + 1
                             if group_idx < len(matches[0].groups()) + 1:
                                 result[col] = matches[0].group(group_idx)
+                        
+                        # 추가 처리 로직 (CPU 및 메모리 사용량 계산)
+                        if 'process' in pattern_rule and all(col in result for col in pattern_rule['process']['inputs']):
+                            process_info = pattern_rule['process']
+                            if process_info['type'] == 'percentage':
+                                inputs = process_info['inputs']
+                                # 두 입력값을 숫자로 변환
+                                try:
+                                    numerator = float(result[inputs[0]])
+                                    denominator = float(result[inputs[1]])
+                                    
+                                    if denominator > 0:
+                                        # 백분율 계산 (소수점 두 자리까지)
+                                        percentage = round((numerator / denominator) * 100, 2)
+                                        # 결과 저장
+                                        result[process_info['output_column']] = f"{percentage}%"
+                                    else:
+                                        self.logger.warning(f"분모가 0입니다: {inputs[1]}")
+                                except (ValueError, TypeError) as e:
+                                    self.logger.warning(f"백분율 계산 실패: {str(e)}")
                     # 단일 컬럼에 매핑하는 경우
                     elif 'output_column' in pattern_rule and matches:
                         column = pattern_rule['output_column']
@@ -364,7 +385,7 @@ class NetworkInspector:
         # 세션 로그 파일 생성
         session_log_file = os.path.join(
             self.session_log_dir,
-            f"{device['ip']}_{device['vendor']}_{device['OS']}.log"
+            f"{device['ip']}_{device['vendor']}_{device['os']}.log"
         )
         
         while retry_count < self.max_retries:
@@ -373,35 +394,35 @@ class NetworkInspector:
                 with open(session_log_file, 'a', encoding='utf-8') as log:
                     log.write(f"\n{'='*50}\n")
                     log.write(f"연결 시도 {retry_count + 1} - {datetime.now()}\n")
-                    log.write(f"장비: {device['ip']} ({device['vendor']} {device['OS']})\n")
+                    log.write(f"장비: {device['ip']} ({device['vendor']} {device['os']})\n")
                     log.write(f"{'='*50}\n\n")
 
                 # 장비 타입 설정
                 if device['connection_type'].lower() == 'telnet':
-                    if device['vendor'].lower() == 'cisco' and device['OS'].lower() == 'ios':
+                    if device['vendor'].lower() == 'cisco' and device['os'].lower() == 'ios':
                         device_type = 'cisco_ios_telnet'
-                    elif device['vendor'].lower() == 'ubiquoss' and device['OS'].lower() == 'e4020':
+                    elif device['vendor'].lower() == 'ubiquoss' and device['os'].lower() == 'e4020':
                         # 유비쿼스 장비는 Telnet 접속 시 특별 처리가 필요하므로 generic_telnet 사용
                         device_type = 'generic_telnet'
-                    elif device['vendor'].lower() == 'axgate' and device['OS'].lower() == 'axgate':
+                    elif device['vendor'].lower() == 'axgate' and device['os'].lower() == 'axgate':
                         device_type = 'generic'
                     else:
-                        device_type = f"{str(device['vendor']).lower()}_{str(device['OS']).lower()}_telnet"
+                        device_type = f"{str(device['vendor']).lower()}_{str(device['os']).lower()}_telnet"
                 else:
-                    if device['vendor'].lower() == 'ubiquoss' and device['OS'].lower() == 'e4020':
+                    if device['vendor'].lower() == 'ubiquoss' and device['os'].lower() == 'e4020':
                         device_type = 'generic'
-                    elif device['vendor'].lower() == 'axgate' and device['OS'].lower() == 'axgate':
+                    elif device['vendor'].lower() == 'axgate' and device['os'].lower() == 'axgate':
                         device_type = 'generic'
                     elif device['vendor'].lower() == 'juniper':
                         # Juniper 장비는 'juniper_junos' device_type 사용
                         device_type = 'juniper_junos'
                     else:
-                        device_type = f"{str(device['vendor']).lower()}_{str(device['OS']).lower()}"
+                        device_type = f"{str(device['vendor']).lower()}_{str(device['os']).lower()}"
 
                 # 커스텀 핸들러 사용 시도
                 custom_handler = get_custom_handler(device, self.timeout, session_log_file)
                 if custom_handler:
-                    self.logger.debug(f"커스텀 핸들러 사용: {device['vendor']} {device['OS']}")
+                    self.logger.debug(f"커스텀 핸들러 사용: {device['vendor']} {device['os']}")
                     try:
                         # 연결 및 특권 모드 진입
                         custom_handler.connect()
@@ -414,7 +435,7 @@ class NetworkInspector:
                             # 점검 명령어 실행
                             commands = self._get_device_commands(
                                 device['vendor'],
-                                device['OS']
+                                device['os']
                             )
                             
                             for cmd in commands:
@@ -425,7 +446,7 @@ class NetworkInspector:
                                     # 결과 파싱
                                     parsed = self._parse_command_output(
                                         device['vendor'],
-                                        device['OS'],
+                                        device['os'],
                                         cmd,
                                         output
                                     )
@@ -439,7 +460,7 @@ class NetworkInspector:
                             # 설정 백업
                             backup_cmd = self._get_backup_command(
                                 device['vendor'],
-                                device['OS']
+                                device['os']
                             )
                             if backup_cmd:
                                 try:
@@ -449,7 +470,7 @@ class NetworkInspector:
                                     # 백업 파일 저장
                                     backup_filename = os.path.join(
                                         self.backup_dir,
-                                        f"{device['ip']}_{device['vendor']}_{device['OS']}.txt"
+                                        f"{device['ip']}_{device['vendor']}_{device['os']}.txt"
                                     )
                                     with open(backup_filename, 'w', encoding='utf-8') as f:
                                         f.write(backup_output)
@@ -482,7 +503,7 @@ class NetworkInspector:
                             return device, {"error": f"커스텀 핸들러 실행 실패: {str(e)}"}
 
                 # 유비쿼스 E4020 Telnet 접속 특별 처리 (레거시 코드 - 제거 예정)
-                if device['vendor'].lower() == 'ubiquoss' and device['OS'].lower() == 'e4020' and device['connection_type'].lower() == 'telnet':
+                if device['vendor'].lower() == 'ubiquoss' and device['os'].lower() == 'e4020' and device['connection_type'].lower() == 'telnet':
                     self.logger.debug(f"유비쿼스 장비 Telnet 접속 시작: {device['ip']}")
                     
                     # Telnet 직접 구현 (username/password 프롬프트 처리)
@@ -515,7 +536,7 @@ class NetworkInspector:
                             time.sleep(2)
                         
                         # terminal length 0 명령어 실행 (Axgate 제외)
-                        if not (device['vendor'].lower() == 'axgate' and device['OS'].lower() == 'axgate'):
+                        if not (device['vendor'].lower() == 'axgate' and device['os'].lower() == 'axgate'):
                             tn.write(b"terminal length 0\n")
                             time.sleep(1)
                             output = tn.read_very_eager().decode('ascii')
@@ -530,7 +551,7 @@ class NetworkInspector:
                             # 명령어 실행
                             commands = self._get_device_commands(
                                 device['vendor'],
-                                device['OS']
+                                device['os']
                             )
                             
                             for cmd in commands:
@@ -553,7 +574,7 @@ class NetworkInspector:
                                     # 결과 파싱
                                     parsed = self._parse_command_output(
                                         device['vendor'],
-                                        device['OS'],
+                                        device['os'],
                                         cmd,
                                         output
                                     )
@@ -567,7 +588,7 @@ class NetworkInspector:
                             # 설정 백업
                             backup_cmd = self._get_backup_command(
                                 device['vendor'],
-                                device['OS']
+                                device['os']
                             )
                             if backup_cmd:
                                 try:
@@ -577,7 +598,7 @@ class NetworkInspector:
                                     # 백업 파일 저장
                                     backup_filename = os.path.join(
                                         self.backup_dir,
-                                        f"{device['ip']}_{device['vendor']}_{device['OS']}.txt"
+                                        f"{device['ip']}_{device['vendor']}_{device['os']}.txt"
                                     )
                                     with open(backup_filename, 'w', encoding='utf-8') as f:
                                         f.write(backup_output)
@@ -618,7 +639,7 @@ class NetworkInspector:
                             return device, {"error": f"유비쿼스 Telnet 접속 실패: {str(e)}"}
 
                 # Axgate 장비 특별 처리
-                if device['vendor'].lower() == 'axgate' and device['OS'].lower() == 'axgate':
+                if device['vendor'].lower() == 'axgate' and device['os'].lower() == 'axgate':
                     self.logger.debug(f"Axgate 장비 접속 시작: {device['ip']}")
                     
                     try:
@@ -662,7 +683,7 @@ class NetworkInspector:
                 safe_device = {
                     'ip': str(device['ip']),
                     'vendor': str(device['vendor']),
-                    'OS': str(device['OS']),
+                    'os': str(device['os']),
                     'username': str(device['username']),
                     'password': str(device['password']),
                     'port': int(device['port']),
@@ -688,10 +709,10 @@ class NetworkInspector:
                 try:
                     with ConnectHandler(**connection_params) as conn:
                         # Ubiquoss E4020의 경우 프롬프트 패턴 지정 (SSH 접속 시)
-                        if device['vendor'].lower() == 'ubiquoss' and device['OS'].lower() == 'e4020' and device['connection_type'].lower() == 'ssh':
+                        if device['vendor'].lower() == 'ubiquoss' and device['os'].lower() == 'e4020' and device['connection_type'].lower() == 'ssh':
                             conn.expect_string = r'[>#]'
                         # Axgate의 경우 프롬프트 패턴 지정 (SSH 접속 시)
-                        elif device['vendor'].lower() == 'axgate' and device['OS'].lower() == 'axgate' and device['connection_type'].lower() == 'ssh':
+                        elif device['vendor'].lower() == 'axgate' and device['os'].lower() == 'axgate' and device['connection_type'].lower() == 'ssh':
                             conn.expect_string = r'[>#]'
                         
                         # enable 모드 진입
@@ -721,7 +742,7 @@ class NetworkInspector:
                             else:
                                 conn.enable()
                                 # 다른 장비도 terminal length 0 실행
-                                if not (device['vendor'].lower() == 'axgate' and device['OS'].lower() == 'axgate'):
+                                if not (device['vendor'].lower() == 'axgate' and device['os'].lower() == 'axgate'):
                                     conn.send_command_timing('terminal length 0')
                         except Exception as e:
                             self.logger.warning(f"Enable 모드 진입 실패 ({device['ip']}): {str(e)}")
@@ -733,7 +754,7 @@ class NetworkInspector:
                         if inspection_mode:
                             commands = self._get_device_commands(
                                 device['vendor'],
-                                device['OS']
+                                device['os']
                             )
                             
                             for cmd in commands:
@@ -754,7 +775,7 @@ class NetworkInspector:
                                     # 결과 파싱
                                     parsed = self._parse_command_output(
                                         device['vendor'],
-                                        device['OS'],
+                                        device['os'],
                                         cmd,
                                         output
                                     )
@@ -767,7 +788,7 @@ class NetworkInspector:
                         if backup_mode:
                             backup_cmd = self._get_backup_command(
                                 device['vendor'],
-                                device['OS']
+                                device['os']
                             )
                             if backup_cmd:
                                 try:
@@ -787,7 +808,7 @@ class NetworkInspector:
                                     # 백업 파일 저장
                                     backup_filename = os.path.join(
                                         self.backup_dir,
-                                        f"{device['ip']}_{device['vendor']}_{device['OS']}.txt"
+                                        f"{device['ip']}_{device['vendor']}_{device['os']}.txt"
                                     )
                                     with open(backup_filename, 'w', encoding='utf-8') as f:
                                         f.write(backup_output)
@@ -906,7 +927,7 @@ class NetworkInspector:
                         self.results.append({
                             'ip': device['ip'],
                             'vendor': device['vendor'],
-                            'OS': device['OS'],
+                            'os': device['os'],
                             'status': 'error',
                             'error_message': str(e)
                         })
@@ -946,7 +967,7 @@ class NetworkInspector:
                         self.results.append({
                             'ip': device['ip'],
                             'vendor': device['vendor'],
-                            'OS': device['OS'],
+                            'os': device['os'],
                             'status': 'error',
                             'error_message': str(e)
                         })
@@ -963,7 +984,7 @@ class NetworkInspector:
         result = {
             'ip': device['ip'],
             'vendor': device['vendor'],
-            'OS': device['OS'],
+            'os': device['os'],
             'status': 'success',
             'error_message': '',
             'inspection_results': {},
@@ -1009,7 +1030,7 @@ class NetworkInspector:
         result = {
             'ip': device['ip'],
             'vendor': device['vendor'],
-            'OS': device['OS'],
+            'os': device['os'],
             'status': 'success',
             'error_message': '',
             'inspection_results': {}
@@ -1050,7 +1071,7 @@ class NetworkInspector:
         result = {
             'ip': device['ip'],
             'vendor': device['vendor'],
-            'OS': device['OS'],
+            'os': device['os'],
             'status': 'success',
             'error_message': '',
             'backup_file': ''
@@ -1103,7 +1124,7 @@ class NetworkInspector:
                 new_result = {
                     'ip': result.get('ip', ''),
                     'vendor': result.get('vendor', ''),
-                    'OS': result.get('OS', '')
+                    'os': result.get('os', '')
                 }
                 
                 # inspection_results에서 중요 정보 추출

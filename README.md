@@ -121,6 +121,10 @@ python network-device-inspection.py
 
 ## 최근 변경 사항
 
+- 컬럼 이름 소문자 변환 처리 개선 (OS -> os)
+- 미사용 모듈 제거 (pathlib.Path, sys, subprocess)
+- device_type 설정 부분에서 문자열 변환 코드 추가 ("replace() argument 1 must be str, not float" 오류 해결)
+- PARSING_RULES에 있는 명령어만 파싱하도록 _parse_command_output 함수 수정
 - 필수 컬럼 명칭을 'model'에서 'OS'로 변경
 - 레거시 Cisco 스위치 지원 추가 (username 없이 password만으로 접속)
 - username 필드를 필수가 아닌 선택적 필드로 변경

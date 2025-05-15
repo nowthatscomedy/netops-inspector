@@ -5,7 +5,6 @@ INSPECTION_COMMANDS = {
     'cisco': {
         'ios': [
             'show version',
-
             'show running-config'
         ],
         'ios-xe': [
@@ -14,7 +13,6 @@ INSPECTION_COMMANDS = {
         ],
         'legacy': [
             'show version',
-            'show inventory',
             'show running-config'
         ]
     },
@@ -35,6 +33,12 @@ INSPECTION_COMMANDS = {
     'axgate': {
         'axgate': [
             'show system version',
+            'show system hostname',
+            'show system temperature',
+            'show system fan',
+            'show system uptime',
+            'show resource cpu',
+            'show resource memory',
             'show running-config'
         ]
     },
@@ -85,11 +89,6 @@ PARSING_RULES = {
                         'first_match_only': True
                     },
                     {
-                        'pattern': r'System image file is "([^"]+)"',
-                        'output_column': 'System Image',
-                        'first_match_only': True
-                    },
-                    {
                         'pattern': r'([^\s]+) uptime is (.+)',
                         'output_columns': ['Hostname', 'Uptime'],
                         'first_match_only': True
@@ -119,34 +118,78 @@ PARSING_RULES = {
     'axgate': {
         'axgate': {
             'show system version': {
-                'pattern': r'Version\s+:\s+(.*)',
-                'output_column': 'Version'
-            }
-        }
-    },
-    'nexg': {
-        'vforce': {
-            'show version': {
                 'patterns': [
                     {
-                        'pattern': r'Version\s+:\s+([\d\.]+)',
-                        'output_column': 'Version'
+                        'pattern': r'OS:\s+(.+)',
+                        'output_column': 'Version',
+                        'first_match_only': True
                     },
                     {
-                        'pattern': r'Hostname\s+:\s+(\S+)',
-                        'output_column': 'Hostname'
+                        'pattern': r'Serial:\s+(.+)',
+                        'output_column': 'Serial Number',
+                        'first_match_only': True
                     },
                     {
-                        'pattern': r'Uptime\s+:\s+(.*)',
-                        'output_column': 'Uptime'
+                        'pattern': r'Board:\s+(.+)',
+                        'output_column': 'Model',
+                        'first_match_only': True
+                    }
+                ]
+            },
+            'show system hostname': {
+                'pattern': r'Hostname:\s+(.+)',
+                'output_column': 'Hostname',
+                'first_match_only': True
+            },
+            'show system temperature': {
+                'patterns': [
+                    {
+                        'pattern': r'System:\s+(\+?[0-9.-]+\s*C)',
+                        'output_column': 'System Temperature',
+                        'first_match_only': True
                     },
                     {
-                        'pattern': r'Model\s+:\s+(\S+)',
-                        'output_column': 'Model'
-                    },
+                        'pattern': r'CPU:\s+(\+?[0-9.-]+\s*C)',
+                        'output_column': 'CPU Temperature',
+                        'first_match_only': True
+                    }
+                ]
+            },
+            'show system fan': {
+                'pattern': r'Chassis:\s+(\S+)',
+                'output_column': 'Fan Status',
+                'first_match_only': True
+            },
+            'show system uptime': {
+                'pattern': r'Uptime:\s+(.+)',
+                'output_column': 'Uptime',
+                'first_match_only': True
+            },
+            'show resource cpu': {
+                'patterns': [
                     {
-                        'pattern': r'Serial Number\s+:\s+(\S+)',
-                        'output_column': 'Serial Number'
+                        'pattern': r'T\s+(\d+)\s+\S+\s+\S+\s+\S+\s+\S+\s+\S+\s+\S+\s+\S+\s+(\d+)',
+                        'output_columns': ['CPU Total', 'CPU Used'],
+                        'first_match_only': True,
+                        'process': {
+                            'type': 'percentage',
+                            'inputs': ['CPU Used', 'CPU Total'],
+                            'output_column': 'CPU Usage %'
+                        }
+                    }
+                ]
+            },
+            'show resource memory': {
+                'patterns': [
+                    {
+                        'pattern': r'T\s+(\d+)\s+\S+\s+\S+\s+\S+\s+(\d+)',
+                        'output_columns': ['Memory Total', 'Memory Used'],
+                        'first_match_only': True,
+                        'process': {
+                            'type': 'percentage',
+                            'inputs': ['Memory Used', 'Memory Total'],
+                            'output_column': 'Memory Usage %'
+                        }
                     }
                 ]
             }
@@ -190,7 +233,7 @@ PARSING_RULES = {
                     },
                     {
                         'pattern': r'HW Version\s+:\s+([\d\.]+)',
-                        'output_column': 'HW Version'
+                        'output_column': 'Version'
                     },
                     {
                         'pattern': r'System Name\s+:\s+(\S+)',
@@ -205,6 +248,34 @@ PARSING_RULES = {
             'show system': {
                 'pattern': r'Up Time\s+:\s+(.*)',
                 'output_column': 'Uptime'
+            }
+        }
+    },
+    'nexg': {
+        'vforce': {
+            'show version': {
+                'patterns': [
+                    {
+                        'pattern': r'Version\s+:\s+([\d\.]+)',
+                        'output_column': 'Version'
+                    },
+                    {
+                        'pattern': r'Hostname\s+:\s+(\S+)',
+                        'output_column': 'Hostname'
+                    },
+                    {
+                        'pattern': r'Uptime\s+:\s+(.*)',
+                        'output_column': 'Uptime'
+                    },
+                    {
+                        'pattern': r'Model\s+:\s+(\S+)',
+                        'output_column': 'Model'
+                    },
+                    {
+                        'pattern': r'Serial Number\s+:\s+(\S+)',
+                        'output_column': 'Serial Number'
+                    }
+                ]
             }
         }
     }
