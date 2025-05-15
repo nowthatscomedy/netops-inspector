@@ -923,7 +923,7 @@ class CiscoLegacyTelnetHandler(CustomDeviceHandler):
             cleaned_lines = []
             for line in lines:
                 if "--More--" in line:
-                    cleaned_line = line.split("--More--")[0]
+                    cleaned_line = line.split(more_text)[0].strip()
                     if cleaned_line:
                         cleaned_lines.append(cleaned_line)
                 else:
@@ -984,5 +984,182 @@ def get_custom_handler(device, timeout=10, session_log_file=None):
             return VForceTelnetHandler(device, timeout, session_log_file)
     elif vendor == 'cisco' and model == 'legacy':
         return CiscoLegacyTelnetHandler(device, timeout, session_log_file)
+    # Alcatel-Lucent 장비 처리
+    elif vendor == 'alcatel-lucent' and (model == 'aos6' or model == 'aos8'):
+        if connection_type == 'ssh':
+            return AlcatelLucentHandler(device, timeout, session_log_file)
     
     return None
+
+class AlcatelLucentHandler(CustomDeviceHandler):
+    """Alcatel-Lucent 장비 핸들러"""
+    
+    def __init__(self, device, timeout=30, session_log_file=None):
+        super().__init__(device, timeout, session_log_file)
+        self.ssh = None
+        self.channel = None
+        self.prompt = None
+    
+    def connect(self):
+        """SSH로 장비에 연결"""
+        self.logger.debug(f"Alcatel-Lucent 장비 SSH 접속 시작: {self.device['ip']}")
+        
+        try:
+            # SSH 클라이언트 초기화
+            self.ssh = paramiko.SSHClient()
+            self.ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+            
+            # 연결 설정
+            self.ssh.connect(
+                hostname=self.device['ip'],
+                username=self.device['username'],
+                password=self.device['password'],
+                port=self.device['port'],
+                timeout=self.timeout,
+                allow_agent=False,
+                look_for_keys=False
+            )
+            
+            # 셸 요청
+            self.channel = self.ssh.invoke_shell(width=160, height=1000)
+            self.channel.settimeout(self.timeout)
+            
+            # 초기 출력 처리
+            time.sleep(3)
+            output = self._read_channel()
+            self.log_output("초기 출력", output)
+            
+            # 프롬프트 확인
+            if ">" in output or "#" in output:
+                last_line = output.splitlines()[-1] if output.splitlines() else ""
+                self.prompt = last_line.strip()
+                self.logger.debug(f"프롬프트 설정: {self.prompt}")
+            
+            # 로그인 성공 확인
+            if ">" in output or "#" in output:
+                self.logger.debug(f"Alcatel-Lucent SSH 접속 성공: {self.device['ip']}")
+                return True
+            else:
+                self.logger.warning(f"Alcatel-Lucent SSH 접속 상태 불명확: {self.device['ip']}")
+                return False
+            
+        except Exception as e:
+            self.logger.error(f"Alcatel-Lucent SSH 접속 실패: {str(e)}")
+            if self.session_log_file:
+                with open(self.session_log_file, 'a', encoding='utf-8') as log:
+                    log.write(f"\n접속 실패: {str(e)}\n")
+                    log.write(traceback.format_exc())
+            
+            if self.ssh:
+                self.ssh.close()
+                self.ssh = None
+            
+            raise
+    
+    def _read_channel(self):
+        """채널에서 출력 읽기"""
+        output = ""
+        if self.channel:
+            while self.channel.recv_ready():
+                chunk = self.channel.recv(4096)
+                output += chunk.decode('utf-8', errors='ignore')
+                if not self.channel.recv_ready():
+                    time.sleep(0.1)  # 더 데이터가 오는지 짧게 대기
+        return output
+    
+    def enable(self):
+        """특권 모드 진입 - Alcatel은 로그인 후 특별한 enable 명령 필요 없음"""
+        self.logger.debug(f"Alcatel-Lucent는 별도의 enable 명령이 필요 없음: {self.device['ip']}")
+        
+        return True
+    
+    def send_command(self, command, timeout=None):
+        """명령어 실행"""
+        if timeout is None:
+            timeout = 5
+        
+        self.log_output(f"명령어 실행: {command}", "")
+        
+        try:
+            # 명령어 전송
+            self.channel.send(command + "\n")
+            
+            # 충분한 시간 대기
+            time.sleep(timeout)
+            
+            # 결과 읽기
+            output = self._read_channel()
+            
+            # 명령어 자체와 프롬프트 제거
+            lines = output.splitlines()
+            clean_lines = []
+            
+            # 명령어 라인 건너뛰기
+            skip_first = True
+            for line in lines:
+                if skip_first:
+                    if command in line:
+                        skip_first = False
+                        continue
+                    else:
+                        skip_first = False
+                
+                # 마지막 프롬프트 라인 제외
+                if ">" in line or "#" in line:
+                    if line.strip() == self.prompt:
+                        continue
+                
+                clean_lines.append(line)
+            
+            # '--More--' 처리
+            more_text = "--More--"
+            while any(more_text in line for line in clean_lines):
+                self.channel.send(" ")  # 스페이스바 전송
+                time.sleep(1)
+                chunk = self._read_channel()
+                
+                for line in chunk.splitlines():
+                    if line and not more_text in line and not line.strip() == self.prompt:
+                        clean_lines.append(line)
+            
+            # '--More--' 표시 제거
+            cleaned_output = []
+            for line in clean_lines:
+                if more_text in line:
+                    cleaned_line = line.split(more_text)[0].strip()
+                    if cleaned_line:
+                        cleaned_output.append(cleaned_line)
+                else:
+                    cleaned_output.append(line)
+            
+            result = "\n".join(cleaned_output)
+            self.log_output("명령어 결과", result)
+            
+            return result
+            
+        except Exception as e:
+            self.logger.error(f"명령어 실행 실패 ({command}): {str(e)}")
+            return f"Error executing command: {str(e)}"
+    
+    def disconnect(self):
+        """연결 종료"""
+        if self.channel:
+            try:
+                self.channel.close()
+            except:
+                pass
+        
+        if self.ssh:
+            try:
+                self.ssh.close()
+            except:
+                pass
+            
+        self.channel = None
+        self.ssh = None
+        
+        if self.session_log_file:
+            with open(self.session_log_file, 'a', encoding='utf-8') as log:
+                log.write(f"\n{'='*50}\n")
+                log.write(f"세션 종료: {datetime.now()}\n")
+                log.write(f"{'='*50}\n")

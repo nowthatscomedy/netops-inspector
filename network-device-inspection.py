@@ -6,6 +6,7 @@ from typing import Dict, List, Tuple
 import os
 from datetime import datetime
 from device_commands import INSPECTION_COMMANDS, BACKUP_COMMANDS, PARSING_RULES
+from device_commands import parsing_alcatel_hostname, parsing_alcatel_temperature, parsing_alcatel_fan, parsing_alcatel_power, parsing_alcatel_uptime, parsing_alcatel_version, parsing_alcatel_stack, parsing_alcatel_cpu, parsing_alcatel_memory
 import threading
 import ipaddress
 import socket
@@ -272,8 +273,33 @@ class NetworkInspector:
         try:
             rules = PARSING_RULES[vendor_lower][model_lower][command]
             
+            # 커스텀 파서 함수 호출 처리
+            if 'custom_parser' in rules:
+                parser_name = rules['custom_parser']
+                column = rules['output_column']
+                
+                # Alcatel-Lucent 장비 파서 함수 호출
+                if parser_name == 'parsing_alcatel_hostname':
+                    result[column] = parsing_alcatel_hostname(output)
+                elif parser_name == 'parsing_alcatel_temperature':
+                    result[column] = parsing_alcatel_temperature(output)
+                elif parser_name == 'parsing_alcatel_fan':
+                    result[column] = parsing_alcatel_fan(output)
+                elif parser_name == 'parsing_alcatel_power':
+                    result[column] = parsing_alcatel_power(output)
+                elif parser_name == 'parsing_alcatel_uptime':
+                    result[column] = parsing_alcatel_uptime(output)
+                elif parser_name == 'parsing_alcatel_version':
+                    result[column] = parsing_alcatel_version(output)
+                elif parser_name == 'parsing_alcatel_stack':
+                    result[column] = parsing_alcatel_stack(output)
+                elif parser_name == 'parsing_alcatel_cpu':
+                    result[column] = parsing_alcatel_cpu(output)
+                elif parser_name == 'parsing_alcatel_memory':
+                    result[column] = parsing_alcatel_memory(output)
+                    
             # 단일 패턴인 경우
-            if 'pattern' in rules:
+            elif 'pattern' in rules:
                 pattern = rules['pattern']
                 column = rules['output_column']
                 matches = re.finditer(pattern, output, re.MULTILINE)
@@ -287,6 +313,32 @@ class NetworkInspector:
             # 여러 패턴인 경우
             elif 'patterns' in rules:
                 for pattern_rule in rules['patterns']:
+                    # 패턴별 커스텀 파서 처리
+                    if 'custom_parser' in pattern_rule:
+                        parser_name = pattern_rule['custom_parser']
+                        column = pattern_rule['output_column']
+                        
+                        # Alcatel-Lucent 장비 파서 함수 호출
+                        if parser_name == 'parsing_alcatel_hostname':
+                            result[column] = parsing_alcatel_hostname(output)
+                        elif parser_name == 'parsing_alcatel_temperature':
+                            result[column] = parsing_alcatel_temperature(output)
+                        elif parser_name == 'parsing_alcatel_fan':
+                            result[column] = parsing_alcatel_fan(output)
+                        elif parser_name == 'parsing_alcatel_power':
+                            result[column] = parsing_alcatel_power(output)
+                        elif parser_name == 'parsing_alcatel_uptime':
+                            result[column] = parsing_alcatel_uptime(output)
+                        elif parser_name == 'parsing_alcatel_version':
+                            result[column] = parsing_alcatel_version(output)
+                        elif parser_name == 'parsing_alcatel_stack':
+                            result[column] = parsing_alcatel_stack(output)
+                        elif parser_name == 'parsing_alcatel_cpu':
+                            result[column] = parsing_alcatel_cpu(output)
+                        elif parser_name == 'parsing_alcatel_memory':
+                            result[column] = parsing_alcatel_memory(output)
+                        continue
+                        
                     pattern = pattern_rule['pattern']
                     matches = list(re.finditer(pattern, output, re.MULTILINE))
                     

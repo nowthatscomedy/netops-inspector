@@ -40,6 +40,11 @@ source venv/bin/activate
 pip install -r requirements.txt
 ```
 
+4. 실행 파일 생성 (선택 사항)
+```bash
+pyinstaller --onefile network-device-inspection.py
+```
+
 ## 사용 방법
 
 1. `devices.xlsx` 파일에 장비 정보 입력
@@ -118,9 +123,15 @@ python network-device-inspection.py
   - Axgate
 - NexG
   - VForce
+- Alcatel-Lucent
+  - AOS6
+  - AOS8
 
 ## 최근 변경 사항
 
+- Alcatel-Lucent 장비 지원 추가 (AOS6, AOS8)
+- 코드 구조 개선: 모든 파싱 함수를 device_commands.py 파일로 통합
+- PyInstaller를 사용한 단일 실행 파일 생성 지원 (--onefile 옵션)
 - 컬럼 이름 소문자 변환 처리 개선 (OS -> os)
 - 미사용 모듈 제거 (pathlib.Path, sys, subprocess)
 - device_type 설정 부분에서 문자열 변환 코드 추가 ("replace() argument 1 must be str, not float" 오류 해결)
