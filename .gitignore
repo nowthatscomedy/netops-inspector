@@ -33,7 +33,7 @@ ENV/
 *.swo
 
 # Project specific
-devices.xlsx
+devices*.xlsx
 inspection_results.xlsx
 backup/
 session_logs/

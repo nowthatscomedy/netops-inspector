@@ -5,8 +5,7 @@ from netmiko import ConnectHandler
 from typing import Dict, List, Tuple
 import os
 from datetime import datetime
-from device_commands import INSPECTION_COMMANDS, BACKUP_COMMANDS, PARSING_RULES
-from device_commands import parsing_alcatel_hostname, parsing_alcatel_temperature, parsing_alcatel_fan, parsing_alcatel_power, parsing_alcatel_uptime, parsing_alcatel_version, parsing_alcatel_stack, parsing_alcatel_cpu, parsing_alcatel_memory
+# from vendors import INSPECTION_COMMANDS, BACKUP_COMMANDS, PARSING_RULES # 아래에서 한 번에 임포트
 import threading
 import ipaddress
 import socket
@@ -15,7 +14,27 @@ import logging
 import traceback
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import telnetlib
-from custom_device_handlers import get_custom_handler
+
+# vendors 패키지로부터 필요한 모든 이름들을 한 번에 임포트
+from vendors import (
+    INSPECTION_COMMANDS,
+    BACKUP_COMMANDS,
+    PARSING_RULES,
+    get_custom_handler,
+    parsing_alcatel_hostname,
+    parsing_alcatel_temperature,
+    parsing_alcatel_fan,
+    parsing_alcatel_power,
+    parsing_alcatel_uptime,
+    parsing_alcatel_version,
+    parsing_alcatel_stack,
+    parsing_alcatel_cpu,
+    parsing_alcatel_memory,
+    parsing_axgate_power_status,
+    parsing_ubiquoss_cpu_usage,
+    parsing_ubiquoss_fan_status,
+    parsing_ubiquoss_power_status
+)
 
 # Netmiko 디버그 로그 활성화
 logging.basicConfig(filename='netmiko_debug.log', level=logging.DEBUG)
@@ -297,6 +316,16 @@ class NetworkInspector:
                     result[column] = parsing_alcatel_cpu(output)
                 elif parser_name == 'parsing_alcatel_memory':
                     result[column] = parsing_alcatel_memory(output)
+                # Ubiquoss 커스텀 파서 호출 로직 추가
+                elif parser_name == 'parsing_ubiquoss_cpu_usage':
+                    result[column] = parsing_ubiquoss_cpu_usage(output)
+                elif parser_name == 'parsing_ubiquoss_fan_status':
+                    result[column] = parsing_ubiquoss_fan_status(output)
+                elif parser_name == 'parsing_ubiquoss_power_status':
+                    result[column] = parsing_ubiquoss_power_status(output)
+                # Axgate 커스텀 파서 호출 로직 추가
+                elif parser_name == 'parsing_axgate_power_status':
+                    result[column] = parsing_axgate_power_status(output)
                     
             # 단일 패턴인 경우
             elif 'pattern' in rules:
@@ -337,6 +366,16 @@ class NetworkInspector:
                             result[column] = parsing_alcatel_cpu(output)
                         elif parser_name == 'parsing_alcatel_memory':
                             result[column] = parsing_alcatel_memory(output)
+                        # Ubiquoss 커스텀 파서 호출 로직 추가 (patterns 내부)
+                        elif parser_name == 'parsing_ubiquoss_cpu_usage':
+                            result[column] = parsing_ubiquoss_cpu_usage(output)
+                        elif parser_name == 'parsing_ubiquoss_fan_status':
+                            result[column] = parsing_ubiquoss_fan_status(output)
+                        elif parser_name == 'parsing_ubiquoss_power_status':
+                            result[column] = parsing_ubiquoss_power_status(output)
+                        # Axgate 커스텀 파서 호출 로직 추가 (patterns 내부)
+                        elif parser_name == 'parsing_axgate_power_status':
+                            result[column] = parsing_axgate_power_status(output)
                         continue
                         
                     pattern = pattern_rule['pattern']
@@ -356,24 +395,47 @@ class NetworkInspector:
                                 result[col] = matches[0].group(group_idx)
                         
                         # 추가 처리 로직 (CPU 및 메모리 사용량 계산)
-                        if 'process' in pattern_rule and all(col in result for col in pattern_rule['process']['inputs']):
-                            process_info = pattern_rule['process']
+                        if 'process' in pattern_rule: # 'process' 키가 있는지 먼저 확인
+                            process_info = pattern_rule['process'] # 'process' 정보를 가져옴
+                            
+                            # 'percentage' 타입 처리
                             if process_info['type'] == 'percentage':
-                                inputs = process_info['inputs']
-                                # 두 입력값을 숫자로 변환
-                                try:
-                                    numerator = float(result[inputs[0]])
-                                    denominator = float(result[inputs[1]])
-                                    
-                                    if denominator > 0:
-                                        # 백분율 계산 (소수점 두 자리까지)
-                                        percentage = round((numerator / denominator) * 100, 2)
-                                        # 결과 저장
-                                        result[process_info['output_column']] = f"{percentage}%"
+                                # 'inputs' 키와 해당 컬럼들이 result에 있는지 확인
+                                if 'inputs' in process_info and all(col in result for col in process_info['inputs']):
+                                    inputs = process_info['inputs']
+                                    try:
+                                        numerator = float(result[inputs[0]])
+                                        denominator = float(result[inputs[1]])
+                                        if denominator > 0:
+                                            percentage = round((numerator / denominator) * 100, 2)
+                                            result[process_info['output_column']] = f"{percentage}%"
+                                        else:
+                                            self.logger.warning(f"분모가 0입니다: {inputs[1]} (명령어: {command})")
+                                    except (ValueError, TypeError) as e:
+                                        self.logger.warning(f"백분율 계산 실패: {str(e)} (명령어: {command})")
+                                else:
+                                    self.logger.warning(f"'percentage' process: 'inputs' 키가 없거나, result에 해당 컬럼이 없습니다. (명령어: {command})")
+
+                            # 'calculate_usage_from_available' 타입 처리
+                            elif process_info['type'] == 'calculate_usage_from_available':
+                                if 'input_column' in process_info: # 'input_column' 키가 있는지 확인
+                                    input_col = process_info['input_column']
+                                    output_col = process_info['output_column']
+                                    if input_col in result:
+                                        try:
+                                            available_percent_str = result[input_col].replace('%', '')
+                                            available_percent = float(available_percent_str)
+                                            usage_percent = round(100.0 - available_percent, 2)
+                                            result[output_col] = f"{usage_percent}%"
+                                            # 성공적으로 'Memory Usage %'를 계산한 후, 원본 'Memory Available %' 컬럼 삭제
+                                            if input_col in result: # 삭제 전 한 번 더 확인 (이론상 항상 있어야 함)
+                                                del result[input_col]
+                                        except ValueError:
+                                            self.logger.warning(f"사용 가능한 메모리 백분율 계산 실패: {result[input_col]} (명령어: {command})")
                                     else:
-                                        self.logger.warning(f"분모가 0입니다: {inputs[1]}")
-                                except (ValueError, TypeError) as e:
-                                    self.logger.warning(f"백분율 계산 실패: {str(e)}")
+                                        self.logger.warning(f"'calculate_usage_from_available' process: 입력 컬럼 '{input_col}'을 result에서 찾을 수 없습니다. (명령어: {command})")
+                                else:
+                                    self.logger.warning(f"'calculate_usage_from_available' process: 'input_column' 키가 없습니다. (명령어: {command})")
                     # 단일 컬럼에 매핑하는 경우
                     elif 'output_column' in pattern_rule and matches:
                         column = pattern_rule['output_column']
@@ -973,6 +1035,11 @@ class NetworkInspector:
                     result = future.result()
                     with self.results_lock:
                         self.results.append(result)
+                    # 로깅 메시지 수정
+                    status_message = "성공"
+                    if result.get('status') == 'error':
+                        status_message = f"실패 - 오류: {result.get('error_message', '알 수 없는 오류')}"
+                    self.logger.info(f"진행 상황: {completed_devices + 1}/{total_devices} 장비 처리 완료 (IP: {device['ip']}, 상태: {status_message})")
                 except Exception as e:
                     self.logger.error(f"장비 처리 중 오류 발생: {device['ip']} - {str(e)}")
                     with self.results_lock:
@@ -1013,6 +1080,11 @@ class NetworkInspector:
                     result = future.result()
                     with self.results_lock:
                         self.results.append(result)
+                    # 로깅 메시지 수정
+                    status_message = "성공"
+                    if result.get('status') == 'error':
+                        status_message = f"실패 - 오류: {result.get('error_message', '알 수 없는 오류')}"
+                    self.logger.info(f"진행 상황: {completed_devices + 1}/{total_devices} 장비 처리 완료 (IP: {device['ip']}, 상태: {status_message})")
                 except Exception as e:
                     self.logger.error(f"장비 처리 중 오류 발생: {device['ip']} - {str(e)}")
                     with self.results_lock:
@@ -1187,9 +1259,9 @@ class NetworkInspector:
                     if 'Version' in inspection_data:
                         new_result['Version'] = inspection_data['Version']
                     
-                    # 다른 필요한 정보들 추출
+                    # 다른 필요한 정보들 추출 (backup_file 제외)
                     for key, value in inspection_data.items():
-                        if not key.startswith('error_') and key != 'backup_error':
+                        if not key.startswith('error_') and key != 'backup_error' and key != 'backup_file':
                             new_result[key] = value
                 
                 simplified_results.append(new_result)
