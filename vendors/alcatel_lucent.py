@@ -266,8 +266,17 @@ ALCATEL_PARSING_RULES = {
                 'output_column': 'Memory Usage %'
             },
             'show chassis': {
-                'pattern': r'Serial Number:\s+([^,]+),?',
-                'output_column': 'Serial Number'
+                'patterns': [
+                    {
+                        'pattern': r'Model Name:\s+([^,]+),?',
+                        'output_column': 'Model',
+                        'first_match_only': True
+                    },
+                    {
+                        'pattern': r'Serial Number:\s+([^,]+),?',
+                        'output_column': 'Serial Number'
+                    }
+                ]
             }
         },
         'aos8': {
@@ -315,8 +324,17 @@ ALCATEL_PARSING_RULES = {
                 'output_column': 'Memory Usage %'
             },
             'show chassis': {
-                'pattern': r'Serial Number:\s+([^,]+),?',
-                'output_column': 'Serial Number'
+                'patterns': [
+                    {
+                        'pattern': r'Model Name:\s+([^,]+),?',
+                        'output_column': 'Model',
+                        'first_match_only': True
+                    },
+                    {
+                        'pattern': r'Serial Number:\s+([^,]+),?',
+                        'output_column': 'Serial Number'
+                    }
+                ]
             }
         }
     }
