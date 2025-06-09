@@ -57,18 +57,25 @@ def parsing_alcatel_hostname(output):
     if hostname:
         result = hostname.group(1)
     else:
-        result = "Error"
+        result = ""
     return result
 
 def parsing_alcatel_temperature(output):
     """Alcatel-Lucent 장비의 온도 정보 파싱"""
     lines = output.split("\n")
     chassis_numbers = []
+    found_temp_info = False
     for line in lines:
         if "Temperature for chassis" in line:
+            found_temp_info = True
             chassis_number = line.split()[-1]
-        elif "Temperature Status" in line and "OVER THRESHOLD" in line:
-            chassis_numbers.append(chassis_number)
+        elif "Temperature Status" in line:
+            found_temp_info = True
+            if "OVER THRESHOLD" in line:
+                chassis_numbers.append(chassis_number)
+
+    if not found_temp_info:
+        return ""
 
     if len(chassis_numbers) > 0:
         str_list = 'Check: ' + ', '.join(str(num) for num in chassis_numbers)
@@ -81,10 +88,14 @@ def parsing_alcatel_fan(output):
     """Alcatel-Lucent 장비의 팬 상태 파싱"""
     lines = output.split("\n")
     not_running_fans = []
+    found_fan_info = False
 
     for line in lines:
         try:
             line_data = line.split()
+            if len(line_data) < 3:
+                continue
+            found_fan_info = True
             chassis = line_data[0]
             fan = line_data[1]
             status = line_data[2]
@@ -93,6 +104,9 @@ def parsing_alcatel_fan(output):
                 not_running_fans.append(chassis + "-" + fan)
         except IndexError:
             pass
+    
+    if not found_fan_info:
+        return ""
     
     if len(not_running_fans) > 0:
         result = 'Check: ' + ", ".join(str(num) for num in not_running_fans)
@@ -104,10 +118,14 @@ def parsing_alcatel_power(output):
     """Alcatel-Lucent 장비의 전원 상태 파싱"""
     lines = output.split("\n")
     powers = []
+    found_power_info = False
 
     for line in lines:
         try:
             line_output = line.split()
+            if len(line_output) < 5:
+                continue
+            found_power_info = True
             slot = line_output[0]
             power = line_output[1]
             status = line_output[4]
@@ -115,6 +133,9 @@ def parsing_alcatel_power(output):
                 powers.append(slot + "-" + power)
         except IndexError:
             pass
+
+    if not found_power_info:
+        return ""
     
     if len(powers) > 0:
         result = 'Check: ' + ", ".join(str(num) for num in powers)
@@ -128,7 +149,7 @@ def parsing_alcatel_uptime(output):
     if uptime:
         result = uptime.group(1)
     else:
-        result = "Unknown"
+        result = ""
     return result
 
 def parsing_alcatel_version(output):
@@ -159,35 +180,43 @@ def parsing_alcatel_cpu(output):
     """Alcatel-Lucent 장비의 CPU 사용률 파싱"""
     lines = output.strip().split('\n')
     cpu_usage = 0
+    parsed_successfully = False
 
     for line in lines: 
         values = line.split()
         try:
             max_value = int(values[-2])
-            if max_value > cpu_usage:
+            if not parsed_successfully or max_value > cpu_usage:
                 cpu_usage = max_value
-        except IndexError:
+            parsed_successfully = True
+        except (IndexError, ValueError):
             pass
-        except ValueError:
-            pass
-    return cpu_usage
+    
+    if parsed_successfully:
+        return cpu_usage
+    else:
+        return ""
 
 def parsing_alcatel_memory(output):
     """Alcatel-Lucent 장비의 메모리 사용률 파싱"""
     lines = output.strip().split('\n')
     memory_usage = 0
+    parsed_successfully = False
 
     for line in lines: 
         values = line.split()
         try:
             max_value = int(values[-2])
-            if max_value > memory_usage:
+            if not parsed_successfully or max_value > memory_usage:
                 memory_usage = max_value
-        except IndexError:
+            parsed_successfully = True
+        except (IndexError, ValueError):
             pass
-        except ValueError:
-            pass
-    return memory_usage
+    
+    if parsed_successfully:
+        return memory_usage
+    else:
+        return ""
 
 # Alcatel-Lucent 장비 출력 파싱 규칙
 ALCATEL_PARSING_RULES = {
@@ -376,7 +405,7 @@ class AlcatelLucentHandler(CustomDeviceHandler):
         
         try:
             # 명령어 전송
-            self.channel.send(command + "\\n")
+            self.channel.send(command + "\n")
             
             # 충분한 시간 대기
             time.sleep(timeout)
@@ -407,7 +436,7 @@ class AlcatelLucentHandler(CustomDeviceHandler):
             
             # '--More--' 처리 로직 제거됨
             
-            result = "\\n".join(clean_lines) # 기존 clean_lines를 바로 사용
+            result = "\n".join(clean_lines) # 기존 clean_lines를 바로 사용
             self.log_output("명령어 결과", result)
             
             return result
