@@ -35,18 +35,18 @@ from vendors import (
     parsing_ubiquoss_power_status
 )
 
-# Netmiko 디버그 로그 활성화
-logging.basicConfig(filename='netmiko_debug.log', level=logging.DEBUG)
-# Netmiko 디버그 로거 설정
-netmiko_logger = logging.getLogger("netmiko")
-netmiko_logger.setLevel(logging.DEBUG)
-# 파일 핸들러 추가
-file_handler = logging.FileHandler('netmiko_debug.log')
-file_handler.setLevel(logging.DEBUG)
-# 포맷터 설정 - 쓰레드 정보 추가
-formatter = logging.Formatter('%(asctime)s - [%(threadName)s] - %(name)s - %(levelname)s - %(message)s')
-file_handler.setFormatter(formatter)
-netmiko_logger.addHandler(file_handler)
+# # Netmiko 디버그 로그 활성화
+# logging.basicConfig(filename='netmiko_debug.log', level=logging.DEBUG)
+# # Netmiko 디버그 로거 설정
+# netmiko_logger = logging.getLogger("netmiko")
+# netmiko_logger.setLevel(logging.DEBUG)
+# # 파일 핸들러 추가
+# file_handler = logging.FileHandler('netmiko_debug.log')
+# file_handler.setLevel(logging.DEBUG)
+# # 포맷터 설정 - 쓰레드 정보 추가
+# formatter = logging.Formatter('%(asctime)s - [%(threadName)s] - %(name)s - %(levelname)s - %(message)s')
+# file_handler.setFormatter(formatter)
+# netmiko_logger.addHandler(file_handler)
 
 class NetworkInspector:
     def __init__(self, input_excel: str, output_excel: str, backup_only: bool = False, inspection_only: bool = False):
