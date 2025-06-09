@@ -1,5 +1,4 @@
 import pandas as pd
-import concurrent.futures
 import re
 from netmiko import ConnectHandler
 from typing import Dict, List, Tuple

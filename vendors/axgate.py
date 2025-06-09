@@ -9,7 +9,6 @@ import telnetlib
 import time
 import logging
 import paramiko
-import socket
 import re
 from datetime import datetime
 from vendors.base import CustomDeviceHandler
@@ -339,11 +338,11 @@ class AxgateSSHHandler(CustomDeviceHandler):
             if self.channel: self.channel.close()
             if self.ssh: self.ssh.close()
             raise
-        except socket.timeout:
-            self.logger.error(f"Axgate SSH 접속 타임아웃: {self.device['ip']}")
+        except paramiko.ssh_exception.SSHException as ssh_e:
+            self.logger.error(f"Axgate SSH 연결 실패: {str(ssh_e)}")
             if self.channel: self.channel.close()
             if self.ssh: self.ssh.close()
-            raise ValueError(f"SSH 접속 타임아웃: {self.device['ip']}")
+            raise ValueError(f"SSH 연결 실패: {self.device['ip']}")
         except Exception as e:
             self.logger.error(f"Axgate SSH 접속 중 예상치 못한 예외 발생: {str(e)}")
             if self.channel: self.channel.close()

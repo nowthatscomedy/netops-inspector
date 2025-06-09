@@ -7,7 +7,6 @@ Network Device Inspection Tool - Base Module
 
 import os
 import logging
-from datetime import datetime
 
 logger = logging.getLogger(__name__)
 

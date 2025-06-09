@@ -9,9 +9,6 @@ import re
 import time
 import logging
 import paramiko
-import socket
-import traceback
-from datetime import datetime
 from vendors.base import CustomDeviceHandler
 
 logger = logging.getLogger(__name__)
@@ -465,5 +462,5 @@ class AlcatelLucentHandler(CustomDeviceHandler):
         if self.session_log_file:
             with open(self.session_log_file, 'a', encoding='utf-8') as log:
                 log.write(f"\n{'='*50}\n")
-                log.write(f"세션 종료: {datetime.now()}\n")
+                log.write(f"세션 종료\n")
                 log.write(f"{'='*50}\n") 

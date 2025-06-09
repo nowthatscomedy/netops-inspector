@@ -34,7 +34,7 @@ ENV/
 
 # Project specific
 devices*.xlsx
-inspection_results.xlsx
+inspection_results*.xlsx
 backup/
 session_logs/
 logs/

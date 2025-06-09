@@ -8,10 +8,8 @@ Ubiquoss 장비의 명령어, 파싱 규칙, 핸들러 클래스를 제공합니
 import telnetlib
 import time
 import logging
-from datetime import datetime
 from vendors.base import CustomDeviceHandler
 import paramiko
-import socket
 import re
 
 logger = logging.getLogger(__name__)
@@ -412,7 +410,7 @@ class UbiquossE4020SSHHandler(CustomDeviceHandler):
         if self.session_log_file:
             with open(self.session_log_file, 'a', encoding='utf-8') as log:
                 log.write(f"\n{'='*50}\n")
-                log.write(f"세션 완료 (Ubiquoss SSH) - {datetime.now()}\n")
+                log.write(f"세션 완료 (Ubiquoss SSH)\n")
                 log.write(f"{'='*50}\n\n")
 
 class UbiquossE4020Handler(CustomDeviceHandler):
@@ -493,5 +491,5 @@ class UbiquossE4020Handler(CustomDeviceHandler):
             if self.session_log_file:
                 with open(self.session_log_file, 'a', encoding='utf-8') as log:
                     log.write(f"\n{'='*50}\n")
-                    log.write(f"세션 완료 - {datetime.now()}\n")
+                    log.write(f"세션 완료\n")
                     log.write(f"{'='*50}\n\n") 
