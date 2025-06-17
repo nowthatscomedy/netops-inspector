@@ -45,8 +45,28 @@ CISCO_PARSING_RULES = {
     'cisco': {
         'ios': {
             'show version': {
-                'pattern': r'Cisco IOS Software.*Version\s+([^\s,]+)',
-                'output_column': 'Version'
+                'patterns': [
+                    {
+                        'pattern': r'(?:Cisco IOS Software|IOS \(tm\)).*?Version\s+([^\s,]+)',
+                        'output_column': 'Version',
+                        'first_match_only': True
+                    },
+                    {
+                        'pattern': r'([^\s]+) uptime is (.+)',
+                        'output_columns': ['Hostname', 'Uptime'],
+                        'first_match_only': True
+                    },
+                    {
+                        'pattern': r'(?:cisco|Cisco)\s+([^\s(]+).*\s+with\s+',
+                        'output_column': 'Model',
+                        'first_match_only': True
+                    },
+                    {
+                        'pattern': r'Processor board ID\s+(\S+)',
+                        'output_column': 'Serial Number',
+                        'first_match_only': True
+                    }
+                ]
             }
         },
         'legacy': {
@@ -63,7 +83,7 @@ CISCO_PARSING_RULES = {
                         'first_match_only': True
                     },
                     {
-                        'pattern': r'(?:cisco|Cisco)\s+(\S+)(?:\s+\([\w\s]+\))?\s+processor',
+                        'pattern': r'(?:cisco|Cisco)\s+([^\s(]+).*\s+with\s+',
                         'output_column': 'Model',
                         'first_match_only': True
                     },
