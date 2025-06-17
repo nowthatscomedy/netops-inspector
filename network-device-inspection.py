@@ -13,6 +13,7 @@ import logging
 import traceback
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import telnetlib
+from openpyxl.styles import PatternFill
 
 # vendors 패키지로부터 필요한 모든 이름들을 한 번에 임포트
 from vendors import (
@@ -1237,42 +1238,62 @@ class NetworkInspector:
             return result
 
     def save_results(self):
-        """결과를 엑셀 파일에 저장합니다."""
+        """결과를 엑셀 파일에 저장하고, 실패한 항목에 서식을 적용합니다."""
         try:
-            # 필요한 컬럼만 포함하는 새 결과 리스트 생성
-            simplified_results = []
+            self.logger.info(f"결과 저장 시작: {self.output_excel}")
             
-            for result in self.results:
-                # 기본 정보만 포함하는 새 항목 생성
-                new_result = {
-                    'ip': result.get('ip', ''),
-                    'vendor': result.get('vendor', ''),
-                    'os': result.get('os', '')
+            processed_results = []
+            for res in self.results:
+                row = {
+                    'ip': res.get('ip'),
+                    'vendor': res.get('vendor'),
+                    'os': res.get('os'),
+                    '접속 상태': '성공' if res.get('status') == 'success' else '실패',
+                    '오류 메시지': res.get('error_message', '')
                 }
+                if res.get('inspection_results'):
+                    for key, value in res['inspection_results'].items():
+                        if not key.startswith('error_') and key not in ['error', 'backup_error', 'backup_file']:
+                            row[key] = value
                 
-                # inspection_results에서 중요 정보 추출
-                if 'inspection_results' in result and result['inspection_results']:
-                    inspection_data = result['inspection_results']
-                    
-                    # Version 정보 추출
-                    if 'Version' in inspection_data:
-                        new_result['Version'] = inspection_data['Version']
-                    
-                    # 다른 필요한 정보들 추출 (backup_file 제외)
-                    for key, value in inspection_data.items():
-                        if not key.startswith('error_') and key != 'backup_error' and key != 'backup_file':
-                            new_result[key] = value
+                processed_results.append(row)
+
+            if not processed_results:
+                self.logger.warning("저장할 결과가 없습니다.")
+                return
+
+            df = pd.DataFrame(processed_results)
+            
+            cols = ['ip', 'vendor', 'os', '접속 상태', '오류 메시지']
+            other_cols = [col for col in df.columns if col not in cols]
+            df = df[cols + other_cols]
+
+            with pd.ExcelWriter(self.output_excel, engine='openpyxl') as writer:
+                df.to_excel(writer, index=False, sheet_name='Inspection Results')
                 
-                simplified_results.append(new_result)
-            
-            # 새 데이터프레임 생성
-            df = pd.DataFrame(simplified_results)
-            
-            # 결과 파일 저장 (이미 타임스탬프가 포함되어 있음)
-            df.to_excel(self.output_excel, index=False)
+                worksheet = writer.sheets['Inspection Results']
+                
+                light_red_fill = PatternFill(start_color='FFFFC7CE',
+                                             end_color='FFFFC7CE',
+                                             fill_type='solid')
+                
+                for idx, row in df.iterrows():
+                    if row['접속 상태'] == '실패':
+                        for col_idx in range(1, len(df.columns) + 1):
+                            worksheet.cell(row=idx + 2, column=col_idx).fill = light_red_fill
+                            
+                for column_cells in worksheet.columns:
+                    try:
+                        length = max(len(str(cell.value)) for cell in column_cells if cell.value)
+                        worksheet.column_dimensions[column_cells[0].column_letter].width = length + 2
+                    except ValueError:
+                        pass
+
             self.logger.info(f"결과가 저장되었습니다: {self.output_excel}")
+            
         except Exception as e:
             self.logger.error(f"결과 저장 중 오류 발생: {str(e)}")
+            self.logger.debug(f"결과 저장 예외 상세: {traceback.format_exc()}")
             raise
 
 def main():
