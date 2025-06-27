@@ -33,7 +33,10 @@ from vendors import (
     parsing_axgate_power_status,
     parsing_ubiquoss_cpu_usage,
     parsing_ubiquoss_fan_status,
-    parsing_ubiquoss_power_status
+    parsing_ubiquoss_power_status,
+    parsing_piolink_login_count,
+    parsing_piolink_port_up_count,
+    parsing_piolink_poe_enable_count
 )
 
 # # Netmiko 디버그 로그 활성화
@@ -326,6 +329,13 @@ class NetworkInspector:
                 # Axgate 커스텀 파서 호출 로직 추가
                 elif parser_name == 'parsing_axgate_power_status':
                     result[column] = parsing_axgate_power_status(output)
+                # Piolink 커스텀 파서 호출 로직 추가
+                elif parser_name == 'parsing_piolink_login_count':
+                    result[column] = parsing_piolink_login_count(output)
+                elif parser_name == 'parsing_piolink_port_up_count':
+                    result[column] = parsing_piolink_port_up_count(output)
+                elif parser_name == 'parsing_piolink_poe_enable_count':
+                    result[column] = parsing_piolink_poe_enable_count(output)
                     
             # 단일 패턴인 경우
             elif 'pattern' in rules:
@@ -376,6 +386,13 @@ class NetworkInspector:
                         # Axgate 커스텀 파서 호출 로직 추가 (patterns 내부)
                         elif parser_name == 'parsing_axgate_power_status':
                             result[column] = parsing_axgate_power_status(output)
+                        # Piolink 커스텀 파서 호출 로직 추가 (patterns 내부)
+                        elif parser_name == 'parsing_piolink_login_count':
+                            result[column] = parsing_piolink_login_count(output)
+                        elif parser_name == 'parsing_piolink_port_up_count':
+                            result[column] = parsing_piolink_port_up_count(output)
+                        elif parser_name == 'parsing_piolink_poe_enable_count':
+                            result[column] = parsing_piolink_poe_enable_count(output)
                         continue
                         
                     pattern = pattern_rule['pattern']

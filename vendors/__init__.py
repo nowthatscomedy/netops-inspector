@@ -7,6 +7,7 @@ from .alcatel_lucent import ALCATEL_INSPECTION_COMMANDS, ALCATEL_BACKUP_COMMANDS
 from .juniper import JUNIPER_INSPECTION_COMMANDS, JUNIPER_BACKUP_COMMANDS, JUNIPER_PARSING_RULES
 from .nexg import NEXG_INSPECTION_COMMANDS, NEXG_BACKUP_COMMANDS, NEXG_PARSING_RULES
 from .ubiquoss import UBIQUOSS_INSPECTION_COMMANDS, UBIQUOSS_BACKUP_COMMANDS, UBIQUOSS_PARSING_RULES
+from .piolink import PIOLINK_INSPECTION_COMMANDS, PIOLINK_BACKUP_COMMANDS, PIOLINK_PARSING_RULES
 
 # 메인 딕셔너리 초기화
 INSPECTION_COMMANDS = {}
@@ -45,6 +46,11 @@ PARSING_RULES.update(NEXG_PARSING_RULES)
 INSPECTION_COMMANDS.update(UBIQUOSS_INSPECTION_COMMANDS)
 BACKUP_COMMANDS.update(UBIQUOSS_BACKUP_COMMANDS)
 PARSING_RULES.update(UBIQUOSS_PARSING_RULES)
+
+# Piolink
+INSPECTION_COMMANDS.update(PIOLINK_INSPECTION_COMMANDS)
+BACKUP_COMMANDS.update(PIOLINK_BACKUP_COMMANDS)
+PARSING_RULES.update(PIOLINK_PARSING_RULES)
 
 # 커스텀 파서 함수 및 핸들러 선택 함수도 필요시 여기서 노출 가능
 # 예: from .alcatel_lucent import parsing_alcatel_hostname 등
@@ -87,6 +93,12 @@ from vendors.ubiquoss import (
     parsing_ubiquoss_fan_status,
     parsing_ubiquoss_power_status
 )
+# Piolink 커스텀 파서 임포트
+from vendors.piolink import (
+    parsing_piolink_login_count,
+    parsing_piolink_port_up_count,
+    parsing_piolink_poe_enable_count
+)
 
 # 명시적으로 외부에 노출할 이름들을 정의합니다.
 __all__ = [
@@ -106,5 +118,8 @@ __all__ = [
     'parsing_axgate_power_status',
     'parsing_ubiquoss_cpu_usage',
     'parsing_ubiquoss_fan_status',
-    'parsing_ubiquoss_power_status'
+    'parsing_ubiquoss_power_status',
+    'parsing_piolink_login_count',
+    'parsing_piolink_port_up_count',
+    'parsing_piolink_poe_enable_count'
 ] 

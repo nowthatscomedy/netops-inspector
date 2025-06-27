@@ -59,6 +59,7 @@ def get_custom_handler(device, timeout=10, session_log_file=None):
     from vendors.axgate import AxgateHandler, AxgateSSHHandler
     from vendors.nexg import VForceSSHHandler, VForceTelnetHandler
     from vendors.alcatel_lucent import AlcatelLucentHandler
+    from vendors.piolink import PiolinkTifrontSSHHandler
     
     vendor = device.get('vendor', '').lower()
     model = device.get('os', '').lower()
@@ -87,5 +88,9 @@ def get_custom_handler(device, timeout=10, session_log_file=None):
     elif vendor == 'alcatel-lucent' and (model == 'aos6' or model == 'aos8'):
         if connection_type == 'ssh':
             return AlcatelLucentHandler(device, timeout, session_log_file)
+    # Piolink 장비 처리
+    elif vendor == 'piolink' and model == 'tifront':
+        if connection_type == 'ssh':
+            return PiolinkTifrontSSHHandler(device, timeout, session_log_file)
     
     return None 
