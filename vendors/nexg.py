@@ -141,7 +141,6 @@ class VForceSSHHandler(CustomDeviceHandler):
             if self.session_log_file:
                 with open(self.session_log_file, 'a', encoding='utf-8') as log:
                     log.write(f"\nSSH 연결 실패: {str(e)}\n")
-                    log.write(f"상세 정보: {traceback.format_exc()}\n")
                     log.write("-"*50 + "\n")
             raise
     
