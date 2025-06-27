@@ -38,7 +38,7 @@ JUNIPER_PARSING_RULES = {
                 'first_match_only': True
             },
             'show system uptime': {
-                'pattern': r'System booted:\s+(.*?\))',
+                'pattern': r'System booted:.*\(([^)]+)\)',
                 'output_column': 'Uptime',
                 'first_match_only': True
             },
@@ -50,7 +50,7 @@ JUNIPER_PARSING_RULES = {
                         'first_match_only': True
                     },
                     {
-                        'pattern': r'Routing Engine\s+\d*\s+(\S+)',
+                        'pattern': r'^Chassis\s+.*\s(\S+)$',
                         'output_column': 'Model',
                         'first_match_only': True
                     }
