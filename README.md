@@ -1,150 +1,162 @@
-# Network Device Inspection
+# 네트워크 장비 점검 및 백업 자동화 도구
 
-네트워크 장비 점검 및 설정 백업을 자동화하는 프로그램입니다.
+이 프로젝트는 다양한 네트워크 장비의 상태를 점검하고 설정을 백업하는 작업을 자동화하는 Python 스크립트입니다. 엑셀 파일에 장비 목록을 정리해두면, 스크립트가 SSH 또는 Telnet으로 각 장비에 접속하여 필요한 정보를 수집하고 결과를 깔끔한 엑셀 파일로 정리해줍니다.
 
-## 주요 기능
+## ✨ 주요 기능
 
-- 엑셀 파일(`devices.xlsx`)을 통한 장비 정보 입력
-- SSH/Telnet을 통한 장비 접속 (연결 실패 시 최대 3번 재시도)
-- 장비별 점검 명령어 실행 및 결과 수집
-- 설정 파일 백업 및 세션 로그 저장
-- 결과를 엑셀 파일(`inspection_results.xlsx`)로 저장
-- 점검만 또는 백업만 선택적으로 실행 가능
+- **다양한 벤더 지원**: Cisco, Juniper 등 여러 네트워크 장비 벤더를 지원합니다.
+- **엑셀 기반 관리**: 점검할 장비 목록을 `devices.xlsx` 파일 하나로 관리합니다.
+- **유연한 연결 방식**: SSH 및 Telnet 프로토콜을 모두 지원합니다.
+- **병렬 처리**: 다수의 장비를 동시에 점검하여 작업 시간을 단축합니다.
+- **자동 결과 리포트**: 점검 결과를 타임스탬프가 포함된 `inspection_results_...xlsx` 파일로 자동 생성합니다.
+- **상세 로그**: 모든 작업 과정과 장비와의 통신 내용을 로그 파일로 기록하여 문제 발생 시 원인 파악이 용이합니다.
+- **선택적 실행 모드**: '점검만', '백업만', 또는 '점검과 백업 모두' 실행할 수 있습니다.
+- **안정적인 실행**: 연결 실패 시 자동으로 재시도하는 등 오류 처리 로직이 포함되어 있습니다.
 
-## 시스템 요구사항
+## 🔧 지원 장비
 
+| 벤더 (Vendor) | 운영체제 (OS) |
+| :--- | :--- |
+| `cisco` | `ios`, `ios-xe`, `legacy` |
+| `juniper` | `junos` |
+| `alcatel-lucent` | `aos6`, `aos8` |
+| `axgate` | `axgate` |
+| `nexg` | `vforce` |
+| `ubiquoss` | `e4020` |
+| `piolink` | `tifront` |
+
+> **참고**: `devices.xlsx` 파일 작성 시 위 테이블의 `벤더`와 `운영체제` 값을 정확히 사용해야 합니다.
+
+## 📁 디렉토리 구조
+
+```
+.
+├── network-device-inspection.py  # 메인 스크립트
+├── requirements.txt              # 파이썬 의존성 파일
+├── devices.xlsx                  # [사용자 생성] 장비 정보 입력 파일
+├── vendors/                      # 벤더별 설정 모듈
+│   ├── __init__.py
+│   ├── base.py
+│   ├── cisco.py
+│   └── ... (기타 벤더 파일)
+│
+├── backup/                       # (자동 생성) 설정 백업 디렉토리
+│   └── 20230101_120000/
+│       └── 192.168.1.1_cisco_ios.txt
+├── logs/                         # (자동 생성) 프로그램 실행 로그 디렉토리
+│   └── network_inspector_20230101_120000.log
+└── session_logs/                 # (자동 생성) 장비별 세션 로그 디렉토리
+    └── 20230101_120000/
+        └── 192.168.1.1_cisco_ios.log
+```
+
+## ⚙️ 준비 및 설치
+
+### 요구사항
 - Python 3.8 이상
-- Windows/Linux/MacOS
 
-## 설치 방법
+### 설치 과정
+1.  **프로젝트 복제**
+    ```bash
+    git clone https://github.com/your-username/network-device-inspection.git
+    cd network-device-inspection
+    ```
 
-1. 저장소 클론
-```bash
-git clone https://github.com/your-username/network-device-inspection.git
-cd network-device-inspection
-```
+2.  **가상환경 생성 및 활성화 (권장)**
+    ```bash
+    # Windows
+    python -m venv venv
+    .\venv\Scripts\activate
 
-2. 가상환경 생성 및 활성화
-```bash
-# Windows
-python -m venv venv
-.\venv\Scripts\activate
+    # macOS/Linux
+    python3 -m venv venv
+    source venv/bin/activate
+    ```
 
-# Linux/MacOS
-python3 -m venv venv
-source venv/bin/activate
-```
+3.  **필요한 패키지 설치**
+    ```bash
+    pip install -r requirements.txt
+    ```
 
-3. 필요한 패키지 설치
-```bash
-pip install -r requirements.txt
-```
+## 🚀 사용 방법
 
-4. 실행 파일 생성 (선택 사항)
-```bash
-pyinstaller --onefile network-device-inspection.py
-```
+### 1단계: `devices.xlsx` 파일 준비
 
-## 사용 방법
+프로젝트의 루트 디렉토리에 `devices.xlsx` 파일을 생성하고, 점검할 장비 정보를 아래 형식에 맞게 입력합니다.
 
-1. `devices.xlsx` 파일에 장비 정보 입력
-   - 필수 컬럼: ip, vendor, OS, connection_type, port, password
-   - 선택 컬럼: username (레거시 Cisco 장비와 같이 username을 사용하지 않는 장비의 경우 빈 값 허용)
-   - connection_type: ssh 또는 telnet
-   - port: SSH(22) 또는 Telnet(23)의 기본 포트 사용 가능, 그 외 포트는 1024-65535 범위 내에서 지정
+**필수 컬럼**:
+- `ip`: 장비 IP 주소
+- `vendor`: 장비 벤더 ( [지원 장비](#-지원-장비) 섹션 참고)
+- `os`: 장비 운영체제 ( [지원 장비](#-지원-장비) 섹션 참고)
+- `connection_type`: `ssh` 또는 `telnet`
+- `port`: 접속 포트 번호
+- `password`: 장비 로그인 비밀번호
 
-2. 프로그램 실행
+**선택 컬럼**:
+- `username`: 장비 로그인 사용자 이름
+- `enable_password`: 특권 모드(enable) 진입 시 필요한 비밀번호. 미입력 시 `password` 값을 사용합니다.
+
+**입력 예시:**
+| ip | vendor | os | connection_type | port | username | password | enable_password |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| 192.168.1.1 | cisco | ios | ssh | 22 | admin | cisco123 | class |
+| 192.168.1.2 | juniper | junos | ssh | 22 | user | juniper! | |
+| 192.168.1.3 | cisco | legacy | telnet | 23 | | cisco | enable_pass |
+| 10.0.0.1 | ubiquoss | e4020 | telnet | 23 | ubi | ubi123 | |
+
+### 2단계: 스크립트 실행
+
+터미널에서 아래 명령어를 실행합니다.
+
 ```bash
 python network-device-inspection.py
 ```
 
-3. 실행 옵션 선택
-   - 1: 점검만 실행
-   - 2: 백업만 실행
-   - 3: 점검과 백업 모두 실행
-
-4. 결과 확인
-   - `inspection_results_YYYYMMDD_HHMMSS.xlsx`: 점검 결과
-   - `backup/YYYYMMDD_HHMMSS/`: 설정 백업 파일
-   - `session_logs/YYYYMMDD_HHMMSS/`: 세션 로그 파일
-   - `logs/`: 프로그램 실행 로그
-
-## 디렉토리 구조
+실행 후, 원하는 작업 모드를 선택합니다.
 
 ```
-.
-├── backup/                    # 설정 백업 파일 저장
-│   └── YYYYMMDD_HHMMSS/      # 실행별 백업 폴더
-├── session_logs/             # 세션 로그 저장
-│   └── YYYYMMDD_HHMMSS/      # 실행별 세션 로그 폴더
-├── logs/                     # 프로그램 로그 저장
-├── devices.xlsx              # 장비 정보 입력 파일
-├── inspection_results_YYYYMMDD_HHMMSS.xlsx   # 점검 결과 파일
-├── network-device-inspection.py  # 메인 프로그램
-├── device_commands.py        # 장비별 명령어 정의 및 파싱 규칙
-└── custom_device_handlers.py # 커스텀 장비 핸들러
+=== 네트워크 장비 점검 및 백업 도구 ===
+1. 점검만 실행
+2. 백업만 실행
+3. 점검과 백업 모두 실행
+
+실행할 작업을 선택하세요 (1-3):
 ```
 
-## 입력 데이터 검증
+### 3단계: 결과 확인
 
-1. 엑셀 파일 검증
-   - 필수 컬럼 존재 여부 확인
-   - 빈 값 및 중복 IP 주소 확인
-   - IP 주소 형식 검증
-   - 포트 번호 범위 검증
+작업이 완료되면 아래와 같은 결과물들이 생성됩니다.
 
-2. 장비 정보 검증
-   - 지원되는 벤더/모델 조합 확인
-   - 접속 방식(ssh/telnet) 검증
-   - 포트 번호 검증
+- **점검 결과**: `inspection_results_YYYYMMDD_HHMMSS.xlsx`
+  - 장비별 점검 항목과 결과가 정리된 엑셀 파일입니다. 접속 실패 등 문제가 있는 항목은 빨간색으로 표시됩니다.
+- **설정 백업**: `backup/YYYYMMDD_HHMMSS/`
+  - 장비들의 `running-config` 등 설정 정보가 텍스트 파일로 백업됩니다.
+- **로그**: `logs/` 및 `session_logs/`
+  - 스크립트 실행 로그와 각 장비와의 자세한 통신 로그가 기록되어, 문제 해결에 도움을 줍니다.
 
-## 로그 파일
 
-1. 세션 로그 (`session_logs/YYYYMMDD_HHMMSS/`)
-   - 파일명: `IP_vendor_model.log`
-   - 연결 시도 및 명령어 실행 기록
-   - 오류 발생 시 상세 정보 기록
+## 👨‍💻 개발자를 위하여: 신규 장비 추가하기
 
-2. 프로그램 로그 (`logs/`)
-   - 파일명: `network_inspector_YYYYMMDD_HHMMSS.log`
-   - 프로그램 실행 상태 및 오류 기록
+이 도구는 새로운 벤더나 장비 모델을 쉽게 추가할 수 있도록 모듈화된 구조로 설계되었습니다.
 
-## 지원하는 장비
+1.  **벤더 모듈 생성**:
+    - `vendors/` 디렉토리에 `[벤더명].py` 파일을 생성합니다. (예: `vendors/new_vendor.py`)
 
-- Cisco
-  - IOS
-  - IOS-XE
-  - Legacy (username 없이 password만으로 접속하는 레거시 장비)
-- Juniper
-  - JunOS (SRX 시리즈 등 모든 Juniper 장비)
-- Ubiquoss
-  - E4020
-- Axgate
-  - Axgate
-- NexG
-  - VForce
-- Alcatel-Lucent
-  - AOS6
-  - AOS8
+2.  **명령어 및 파싱 규칙 정의**:
+    - 생성한 파일 안에 아래와 같은 딕셔너리들을 정의합니다.
+      - `[벤더명]_INSPECTION_COMMANDS`: 점검에 필요한 명령어 목록
+      - `[벤더명]_BACKUP_COMMANDS`: 백업에 사용할 명령어
+      - `[벤더명]_PARSING_RULES`: 각 명령어의 출력 결과를 파싱하기 위한 정규표현식 또는 커스텀 파싱 함수 규칙
 
-## 최근 변경 사항
+3.  **커스텀 핸들러 구현 (필요 시)**:
+    - 기본 `netmiko` 로 처리가 어려운 특별한 로그인 절차나 명령어 실행 방식이 필요하다면, `vendors/base.py` 의 `CustomDeviceHandler`를 상속받아 새로운 핸들러 클래스를 구현할 수 있습니다.
+    - 구현한 핸들러는 `vendors/base.py`의 `get_custom_handler` 함수에 등록해야 합니다.
 
-- Alcatel-Lucent 장비 지원 추가 (AOS6, AOS8)
-- 코드 구조 개선: 모든 파싱 함수를 device_commands.py 파일로 통합
-- PyInstaller를 사용한 단일 실행 파일 생성 지원 (--onefile 옵션)
-- 컬럼 이름 소문자 변환 처리 개선 (OS -> os)
-- 미사용 모듈 제거 (pathlib.Path, sys, subprocess)
-- device_type 설정 부분에서 문자열 변환 코드 추가 ("replace() argument 1 must be str, not float" 오류 해결)
-- PARSING_RULES에 있는 명령어만 파싱하도록 _parse_command_output 함수 수정
-- 필수 컬럼 명칭을 'model'에서 'OS'로 변경
-- 레거시 Cisco 스위치 지원 추가 (username 없이 password만으로 접속)
-- username 필드를 필수가 아닌 선택적 필드로 변경
-- Juniper SRX300 모델을 JunOS로 통일하여 모든 Juniper 장비에 대한 일관된 처리 지원
-- Axgate-80D 모델을 Axgate로 통일하여 Axgate 장비 처리 간소화
-- 파싱 결과 중복 문제 해결 (특히 Juniper 장비에서 first_match_only 옵션 추가)
-- 점검 또는 백업 모드만 단독으로 실행 시 불필요한 명령어 실행 방지
-- 다양한 Juniper 장비 모델에 대한 파싱 패턴 개선
+4.  **패키지 초기화 파일 수정**:
+    - `vendors/__init__.py` 파일에 새로 추가한 벤더의 설정(`..._COMMANDS`, `..._PARSING_RULES`)과 커스텀 파싱 함수들을 임포트하고 `__all__` 리스트에 추가합니다.
 
-## 라이선스
+자세한 구현 방식은 `vendors/` 디렉토리 내의 다른 벤더 파일들을 참고하세요.
 
-MIT License 
+## 📄 라이선스
+
+이 프로젝트는 MIT 라이선스를 따릅니다. 자세한 내용은 `LICENSE` 파일을 참고하세요. 
