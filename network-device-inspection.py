@@ -14,6 +14,18 @@ import traceback
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import telnetlib
 from openpyxl.styles import PatternFill
+import io
+
+try:
+    import tkinter as tk
+    from tkinter import filedialog, simpledialog, messagebox
+except ImportError:
+    tk = None
+
+try:
+    import msoffcrypto
+except ImportError:
+    msoffcrypto = None
 
 # vendors 패키지로부터 필요한 모든 이름들을 한 번에 임포트
 from vendors import (
@@ -53,8 +65,7 @@ from vendors import (
 # netmiko_logger.addHandler(file_handler)
 
 class NetworkInspector:
-    def __init__(self, input_excel: str, output_excel: str, backup_only: bool = False, inspection_only: bool = False):
-        self.input_excel = input_excel
+    def __init__(self, output_excel: str, backup_only: bool = False, inspection_only: bool = False):
         # 출력 파일명에 타임스탬프 추가
         file_name, file_ext = os.path.splitext(output_excel)
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
@@ -111,6 +122,66 @@ class NetworkInspector:
         
         self.logger.info("로깅 초기화 완료")
         self.logger.debug(f"로그 파일 경로: {log_file}")
+
+    def _get_devices_df_from_file(self) -> pd.DataFrame:
+        """
+        사용자에게 파일 선택 대화상자를 표시하고,
+        선택된 엑셀 파일을 읽어 데이터프레임으로 반환합니다.
+        암호화된 파일의 경우 암호 입력을 요청합니다.
+        """
+        if tk is None:
+            raise ImportError("GUI 기능을 사용하려면 Tkinter 패키지가 필요합니다.")
+        if msoffcrypto is None:
+            raise ImportError("암호화된 Excel 파일 지원을 위해 'msoffcrypto-tool' 라이브러리를 설치해주세요. (pip install msoffcrypto-tool)")
+
+        root = tk.Tk()
+        root.withdraw()
+
+        while True:
+            filepath = filedialog.askopenfilename(
+                title="점검할 엑셀 파일을 선택하세요",
+                filetypes=(("Excel files", "*.xlsx *.xls"), ("All files", "*.*"))
+            )
+            if not filepath:
+                return None
+
+            if not (filepath.endswith('.xlsx') or filepath.endswith('.xls')):
+                messagebox.showerror("잘못된 파일 형식", "엑셀 파일(.xlsx, .xls)을 선택해주세요.")
+                continue
+
+            try:
+                df = pd.read_excel(filepath)
+                self.logger.info(f"선택한 파일: {filepath}")
+                return df
+            except Exception as e:
+                self.logger.warning(f"파일을 직접 열 수 없습니다. 암호화된 파일일 수 있습니다. 오류: {e}")
+                for attempt in range(3):
+                    password = simpledialog.askstring(
+                        "암호 입력",
+                        f"파일에 암호가 설정되어 있을 수 있습니다. 암호를 입력하세요.\n(시도 {attempt + 1}/3)",
+                        show='*'
+                    )
+                    if password is None:
+                        break  # 사용자가 암호 입력을 취소하면 파일 선택으로 돌아감
+
+                    try:
+                        decrypted_file = io.BytesIO()
+                        with open(filepath, 'rb') as f:
+                            office_file = msoffcrypto.OfficeFile(f)
+                            office_file.load_key(password=password)
+                            office_file.decrypt(decrypted_file)
+                        
+                        df = pd.read_excel(decrypted_file)
+                        self.logger.info(f"암호화된 파일 복호화 성공: {filepath}")
+                        return df
+                    except Exception as decrypt_error:
+                        self.logger.warning(f"복호화 실패: {decrypt_error}")
+                        if attempt < 2:
+                            messagebox.showwarning("오류", "암호가 틀렸거나 파일 복호화에 실패했습니다.")
+                        else:
+                            messagebox.showerror("오류", "암호를 3회 잘못 입력했습니다. 다른 파일을 선택해주세요.")
+                            break
+        return None
 
     def _validate_excel_format(self, df: pd.DataFrame) -> Tuple[bool, str]:
         """엑셀 파일 형식을 검증합니다."""
@@ -998,8 +1069,11 @@ class NetworkInspector:
         """엑셀 파일에서 장비 정보를 로드합니다."""
         try:
             self.logger.debug("장비 정보 로드 시작")
-            df = pd.read_excel(self.input_excel)
-            
+            df = self._get_devices_df_from_file()
+
+            if df is None:
+                raise ValueError("파일이 선택되지 않았거나, 파일을 여는 데 실패했습니다.")
+
             # 컬럼 이름을 소문자로 변환 (문자열이 아닌 경우 처리)
             df.columns = [str(col).lower() for col in df.columns]
             
@@ -1316,7 +1390,6 @@ class NetworkInspector:
 def main():
     """메인 함수"""
     try:
-        input_excel = "devices.xlsx"
         output_excel = "inspection_results.xlsx"
         
         print("\n=== 네트워크 장비 점검 및 백업 도구 ===")
@@ -1328,15 +1401,15 @@ def main():
         
         if choice == "1":
             # 점검만 실행
-            inspector = NetworkInspector(input_excel, output_excel, backup_only=False, inspection_only=True)
+            inspector = NetworkInspector(output_excel, backup_only=False, inspection_only=True)
             inspector.inspect_devices(backup_only=False)
         elif choice == "2":
             # 백업만 실행
-            inspector = NetworkInspector(input_excel, output_excel, backup_only=True, inspection_only=False)
+            inspector = NetworkInspector(output_excel, backup_only=True, inspection_only=False)
             inspector.inspect_devices(backup_only=True)
         elif choice == "3":
             # 점검과 백업을 함께 실행 (단일 작업)
-            inspector = NetworkInspector(input_excel, output_excel, backup_only=False, inspection_only=False)
+            inspector = NetworkInspector(output_excel, backup_only=False, inspection_only=False)
             inspector.inspect_and_backup_devices()
         else:
             print("잘못된 선택입니다. 1-3 사이의 숫자를 입력하세요.")

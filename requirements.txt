@@ -4,4 +4,5 @@ openpyxl==3.1.2
 python-dotenv==1.0.0
 paramiko==3.4.0
 cryptography==41.0.7
-pyyaml==6.0.1 
+pyyaml==6.0.1
+msoffcrypto-tool==5.0.0 
