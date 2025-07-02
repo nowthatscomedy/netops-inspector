@@ -7,8 +7,24 @@ Network Device Inspection Tool - Base Module
 
 import os
 import logging
+import importlib
+import pkgutil
 
 logger = logging.getLogger(__name__)
+
+# 핸들러 등록을 위한 레지스트리
+HANDLER_REGISTRY = {}
+
+def register_handler(vendor, os_name, conn_type):
+    """핸들러 클래스를 레지스트리에 등록하는 데코레이터"""
+    def decorator(cls):
+        key = (vendor.lower(), os_name.lower(), conn_type.lower())
+        if key in HANDLER_REGISTRY:
+            logger.warning(f"핸들러 키 중복: {key}가 이미 등록되어 있습니다. 기존 핸들러를 덮어씁니다.")
+        HANDLER_REGISTRY[key] = cls
+        logger.debug(f"핸들러 등록: {key} -> {cls.__name__}")
+        return cls
+    return decorator
 
 class CustomDeviceHandler:
     """커스텀 장비 핸들러 기본 클래스"""
@@ -51,51 +67,37 @@ class CustomDeviceHandler:
             f"{self.device['ip']}_{self.device['vendor']}_{self.device['os']}.txt"
         )
 
+def _load_handlers():
+    """
+    vendors 패키지 내의 모든 모듈을 임포트하여 핸들러가 레지스트리에 등록되도록 합니다.
+    이 함수는 get_custom_handler가 처음 호출될 때 한 번만 실행됩니다.
+    """
+    pkg_path = os.path.dirname(__file__)
+    pkg_name = os.path.basename(pkg_path)
+    for _, name, _ in pkgutil.iter_modules([pkg_path]):
+        importlib.import_module(f'.{name}', pkg_name)
+
+_load_handlers() # 이 파일을 임포트하는 시점에 모든 핸들러 로드
+
 def get_custom_handler(device, timeout=10, session_log_file=None):
     """장비 유형에 맞는 커스텀 핸들러 반환"""
-    # 메인 코드에 임포트 문제를 피하기 위해 내부에서 임포트
-    from vendors.cisco import CiscoLegacyTelnetHandler
-    from vendors.ubiquoss import UbiquossE4020Handler, UbiquossE4020SSHHandler
-    from vendors.axgate import AxgateHandler, AxgateSSHHandler
-    from vendors.nexg import VForceSSHHandler, VForceTelnetHandler
-    from vendors.alcatel_lucent import AlcatelLucentHandler
-    from vendors.piolink import PiolinkTifrontSSHHandler
-    from vendors.handreamnet import HandreamnetHnSSHHandler
-    
     vendor = device.get('vendor', '').lower()
     model = device.get('os', '').lower()
     connection_type = device.get('connection_type', '').lower()
     
-    # 유비쿼스 E4020 장비 처리
-    if vendor == 'ubiquoss' and model == 'e4020':
-        if connection_type == 'telnet':
-            return UbiquossE4020Handler(device, timeout, session_log_file)
-        elif connection_type == 'ssh':
-            return UbiquossE4020SSHHandler(device, timeout, session_log_file)
-    # Axgate 장비 처리
-    elif vendor == 'axgate' and model == 'axgate':
-        if connection_type == 'telnet':
-            return AxgateHandler(device, timeout, session_log_file)
-        elif connection_type == 'ssh':
-            return AxgateSSHHandler(device, timeout, session_log_file)
-    elif vendor == 'nexg' and model == 'vforce':
-        if connection_type == 'ssh':
-            return VForceSSHHandler(device, timeout, session_log_file)
-        elif connection_type == 'telnet':
-            return VForceTelnetHandler(device, timeout, session_log_file)
-    elif vendor == 'cisco' and model == 'legacy':
-        return CiscoLegacyTelnetHandler(device, timeout, session_log_file)
-    # Alcatel-Lucent 장비 처리
-    elif vendor == 'alcatel-lucent' and (model == 'aos6' or model == 'aos8'):
-        if connection_type == 'ssh':
-            return AlcatelLucentHandler(device, timeout, session_log_file)
-    # Piolink 장비 처리
-    elif vendor == 'piolink' and model == 'tifront':
-        if connection_type == 'ssh':
-            return PiolinkTifrontSSHHandler(device, timeout, session_log_file)
-    # Handreamnet 장비 처리
-    elif vendor == 'handreamnet' and model == 'hn':
-        if connection_type == 'ssh':
-            return HandreamnetHnSSHHandler(device, timeout, session_log_file)
+    key = (vendor, model, connection_type)
+    handler_class = HANDLER_REGISTRY.get(key)
     
+    if handler_class:
+        logger.debug(f"핸들러 찾음: {key} -> {handler_class.__name__}")
+        return handler_class(device, timeout, session_log_file)
+    
+    # 레거시 cisco 핸들러 같이 특정 os가 아닌 경우도 찾아보기
+    key_generic_os = (vendor, '*', connection_type)
+    handler_class = HANDLER_REGISTRY.get(key_generic_os)
+    if handler_class:
+        logger.debug(f"핸들러 찾음 (Generic OS): {key_generic_os} -> {handler_class.__name__}")
+        return handler_class(device, timeout, session_log_file)
+        
+    logger.debug(f"커스텀 핸들러를 찾을 수 없음: {key}")
     return None 

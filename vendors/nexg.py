@@ -10,7 +10,7 @@ import time
 import logging
 import paramiko
 import socket
-from vendors.base import CustomDeviceHandler
+from vendors.base import CustomDeviceHandler, register_handler
 
 logger = logging.getLogger(__name__)
 
@@ -63,6 +63,7 @@ NEXG_PARSING_RULES = {
     }
 }
 
+@register_handler('nexg', 'vforce', 'ssh')
 class VForceSSHHandler(CustomDeviceHandler):
     """NexG VForce SSH 장비 핸들러 (Axgate와 유사한 접속 방식)"""
     
@@ -297,6 +298,7 @@ class VForceSSHHandler(CustomDeviceHandler):
             self.logger.warning(f"연결 종료 중 오류: {str(e)}")
 
 
+@register_handler('nexg', 'vforce', 'telnet')
 class VForceTelnetHandler(CustomDeviceHandler):
     """NexG VForce 장비 Telnet 핸들러"""
     

@@ -1,5 +1,13 @@
 # vendors/__init__.py
 
+import os
+import importlib
+import pkgutil
+import logging
+from collections import defaultdict
+
+logger = logging.getLogger(__name__)
+
 # 각 벤더 모듈에서 필요한 딕셔너리들을 임포트
 from .axgate import AXGATE_INSPECTION_COMMANDS, AXGATE_BACKUP_COMMANDS, AXGATE_PARSING_RULES
 from .cisco import CISCO_INSPECTION_COMMANDS, CISCO_BACKUP_COMMANDS, CISCO_PARSING_RULES
@@ -10,79 +18,77 @@ from .ubiquoss import UBIQUOSS_INSPECTION_COMMANDS, UBIQUOSS_BACKUP_COMMANDS, UB
 from .piolink import PIOLINK_INSPECTION_COMMANDS, PIOLINK_BACKUP_COMMANDS, PIOLINK_PARSING_RULES
 from .handreamnet import HANDREAMNET_INSPECTION_COMMANDS, HANDREAMNET_BACKUP_COMMANDS, HANDREAMNET_PARSING_RULES
 
-# 메인 딕셔너리 초기화
-INSPECTION_COMMANDS = {}
-BACKUP_COMMANDS = {}
-PARSING_RULES = {}
+# 메인 딕셔너리 초기화 (defaultdict 사용으로 키 존재 여부 확인 불필요)
+INSPECTION_COMMANDS = defaultdict(dict)
+BACKUP_COMMANDS = defaultdict(dict)
+PARSING_RULES = defaultdict(dict)
 
-# 각 벤더의 딕셔너리들을 메인 딕셔너리에 병합
-# update() 메소드를 사용하여 키가 겹치더라도 벤더별로 고유하게 유지되도록 함 (벤더명이 최상위 키이므로)
+# 커스텀 파서 함수들을 담을 딕셔너리
+CUSTOM_PARSERS = {}
 
-# Axgate
-INSPECTION_COMMANDS.update(AXGATE_INSPECTION_COMMANDS)
-BACKUP_COMMANDS.update(AXGATE_BACKUP_COMMANDS)
-PARSING_RULES.update(AXGATE_PARSING_RULES)
+def _load_vendor_modules():
+    """
+    vendors 패키지 내의 모든 모듈을 동적으로 임포트하고,
+    각 모듈의 명령어, 파싱 규칙, 커스텀 파서 함수를 자동으로 로드합니다.
+    """
+    pkg_path = os.path.dirname(__file__)
+    pkg_name = os.path.basename(pkg_path)
 
-# Cisco
-INSPECTION_COMMANDS.update(CISCO_INSPECTION_COMMANDS)
-BACKUP_COMMANDS.update(CISCO_BACKUP_COMMANDS)
-PARSING_RULES.update(CISCO_PARSING_RULES)
+    for _, name, _ in pkgutil.iter_modules([pkg_path]):
+        if name in ['base']:  # 기본 모듈 등은 건너뛰기
+            continue
+        try:
+            module = importlib.import_module(f'.{name}', pkg_name)
+            
+            # --- 명령어 및 파싱 규칙 로드 ---
+            vendor_name = name.split('_')[0] # ex) 'alcatel_lucent' -> 'alcatel-lucent'
+            if 'alcatel' in vendor_name: vendor_name = 'alcatel-lucent'
 
-# Alcatel-Lucent
-INSPECTION_COMMANDS.update(ALCATEL_INSPECTION_COMMANDS)
-BACKUP_COMMANDS.update(ALCATEL_BACKUP_COMMANDS)
-PARSING_RULES.update(ALCATEL_PARSING_RULES)
+            # 1. 점검 명령어 로드
+            cmd_dict_name = f"{name.upper()}_INSPECTION_COMMANDS"
+            if hasattr(module, cmd_dict_name):
+                vendor_cmds = getattr(module, cmd_dict_name)
+                if vendor_name in vendor_cmds:
+                    INSPECTION_COMMANDS[vendor_name].update(vendor_cmds[vendor_name])
 
-# Juniper
-INSPECTION_COMMANDS.update(JUNIPER_INSPECTION_COMMANDS)
-BACKUP_COMMANDS.update(JUNIPER_BACKUP_COMMANDS)
-PARSING_RULES.update(JUNIPER_PARSING_RULES)
+            # 2. 백업 명령어 로드
+            backup_cmd_dict_name = f"{name.upper()}_BACKUP_COMMANDS"
+            if hasattr(module, backup_cmd_dict_name):
+                vendor_backup_cmds = getattr(module, backup_cmd_dict_name)
+                if vendor_name in vendor_backup_cmds:
+                    BACKUP_COMMANDS[vendor_name].update(vendor_backup_cmds[vendor_name])
 
-# NexG
-INSPECTION_COMMANDS.update(NEXG_INSPECTION_COMMANDS)
-BACKUP_COMMANDS.update(NEXG_BACKUP_COMMANDS)
-PARSING_RULES.update(NEXG_PARSING_RULES)
+            # 3. 파싱 규칙 로드
+            rules_dict_name = f"{name.upper()}_PARSING_RULES"
+            if hasattr(module, rules_dict_name):
+                vendor_rules = getattr(module, rules_dict_name)
+                if vendor_name in vendor_rules:
+                    PARSING_RULES[vendor_name].update(vendor_rules[vendor_name])
+            
+            # --- 커스텀 파서 함수 로드 ---
+            for attr_name in dir(module):
+                if attr_name.startswith('parsing_'):
+                    attr = getattr(module, attr_name)
+                    if callable(attr):
+                        CUSTOM_PARSERS[attr_name] = attr
+                        logger.debug(f"커스텀 파서 등록: {attr_name}")
 
-# Ubiquoss
-INSPECTION_COMMANDS.update(UBIQUOSS_INSPECTION_COMMANDS)
-BACKUP_COMMANDS.update(UBIQUOSS_BACKUP_COMMANDS)
-PARSING_RULES.update(UBIQUOSS_PARSING_RULES)
+        except Exception as e:
+            logger.error(f"벤더 모듈 '{name}' 로드 실패: {e}")
 
-# Piolink
-INSPECTION_COMMANDS.update(PIOLINK_INSPECTION_COMMANDS)
-BACKUP_COMMANDS.update(PIOLINK_BACKUP_COMMANDS)
-PARSING_RULES.update(PIOLINK_PARSING_RULES)
+_load_vendor_modules()
 
-# Handreamnet
-INSPECTION_COMMANDS.update(HANDREAMNET_INSPECTION_COMMANDS)
-BACKUP_COMMANDS.update(HANDREAMNET_BACKUP_COMMANDS)
-PARSING_RULES.update(HANDREAMNET_PARSING_RULES)
-
-# 커스텀 파서 함수 및 핸들러 선택 함수도 필요시 여기서 노출 가능
-# 예: from .alcatel_lucent import parsing_alcatel_hostname 등
-#     from .base import get_custom_handler
-
-# 메인 스크립트에서 직접 임포트하는 커스텀 파서 함수들을 __all__에 명시하거나,
-# 아니면 메인 스크립트에서 각 모듈로부터 직접 임포트하도록 유지합니다.
-# 현재는 메인 스크립트에서 vendors.모듈명 형태로 접근하고 있으므로,
-# INSPECTION_COMMANDS, BACKUP_COMMANDS, PARSING_RULES 만 __init__.py에서 준비하면 됩니다.
-
-# get_custom_handler 함수도 여기서 임포트하여 vendors 패키지를 통해 접근 가능하게 합니다.
+# get_custom_handler 함수는 base에서 직접 임포트하여 사용하도록 변경
 from .base import get_custom_handler
 
-# 특정 함수들을 `from vendors import ...` 형태로 사용하고 싶다면 __all__에 추가합니다.
-# 예를 들어, Alcatel 파서 함수들을 vendors 패키지 레벨에서 직접 접근하게 하려면:
-# from .alcatel_lucent import (
-#     parsing_alcatel_hostname, parsing_alcatel_temperature, parsing_alcatel_fan,
-#     parsing_alcatel_power, parsing_alcatel_uptime, parsing_alcatel_version,
-#     parsing_alcatel_stack, parsing_alcatel_cpu, parsing_alcatel_memory
-# )
-# __all__ = [
-#     'INSPECTION_COMMANDS', 'BACKUP_COMMANDS', 'PARSING_RULES', 'get_custom_handler',
-#     'parsing_alcatel_hostname', # ... 기타 Alcatel 파서 함수들
-# ]
-# 하지만 현재 메인 스크립트에서는 from vendors import parsing_alcatel_hostname 처럼 사용하고 있으므로,
-# 이 방식이 유지되려면 해당 함수들이 __init__.py에 정의되거나 임포트되어야 합니다.
+# __all__을 사용하여 외부에 노출할 이름 명시
+__all__ = [
+    'INSPECTION_COMMANDS',
+    'BACKUP_COMMANDS',
+    'PARSING_RULES',
+    'CUSTOM_PARSERS',
+    'get_custom_handler',
+]
 
 # 기존 메인 스크립트의 임포트 방식 (`from vendors import parsing_alcatel_hostname` 등)을 유지하기 위해
 # 필요한 함수들을 여기서 임포트합니다.
@@ -111,6 +117,7 @@ __all__ = [
     'INSPECTION_COMMANDS',
     'BACKUP_COMMANDS',
     'PARSING_RULES',
+    'CUSTOM_PARSERS',
     'get_custom_handler',
     'parsing_alcatel_hostname',
     'parsing_alcatel_temperature',

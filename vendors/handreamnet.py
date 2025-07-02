@@ -9,7 +9,7 @@ import time
 import logging
 import paramiko
 import re
-from vendors.base import CustomDeviceHandler
+from vendors.base import CustomDeviceHandler, register_handler
 
 logger = logging.getLogger(__name__)
 
@@ -92,6 +92,7 @@ HANDREAMNET_PARSING_RULES = {
 }
 
 
+@register_handler('handreamnet', 'hn', 'ssh')
 class HandreamnetHnSSHHandler(CustomDeviceHandler):
     """Handreamnet HN SSH 장비 핸들러"""
 

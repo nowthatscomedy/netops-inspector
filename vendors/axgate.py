@@ -11,7 +11,7 @@ import logging
 import paramiko
 import re
 from datetime import datetime
-from vendors.base import CustomDeviceHandler
+from vendors.base import CustomDeviceHandler, register_handler
 
 logger = logging.getLogger(__name__)
 
@@ -167,6 +167,7 @@ def parsing_axgate_power_status(output: str) -> str:
     else:
         return "WARN: " + ", ".join(warnings)
 
+@register_handler('axgate', 'axgate', 'telnet')
 class AxgateHandler(CustomDeviceHandler):
     """Axgate 장비 핸들러"""
     
@@ -243,6 +244,7 @@ class AxgateHandler(CustomDeviceHandler):
                     log.write(f"{'='*50}\n\n")
 
 
+@register_handler('axgate', 'axgate', 'ssh')
 class AxgateSSHHandler(CustomDeviceHandler):
     """Axgate 장비 SSH 핸들러"""
     

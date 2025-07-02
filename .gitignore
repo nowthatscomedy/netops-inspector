@@ -41,4 +41,3 @@ logs/
 
 # Logs
 *.log
-netmiko_debug.log 

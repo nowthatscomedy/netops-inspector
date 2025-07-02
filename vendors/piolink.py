@@ -10,7 +10,7 @@ import logging
 import paramiko
 import re
 import datetime
-from vendors.base import CustomDeviceHandler
+from vendors.base import CustomDeviceHandler, register_handler
 
 logger = logging.getLogger(__name__)
 
@@ -134,6 +134,7 @@ PIOLINK_PARSING_RULES = {
 }
 
 
+@register_handler('piolink', 'tifront', 'ssh')
 class PiolinkTifrontSSHHandler(CustomDeviceHandler):
     """Piolink Tifront SSH 장비 핸들러"""
     

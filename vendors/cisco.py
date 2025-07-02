@@ -9,7 +9,7 @@ import telnetlib
 import time
 import logging
 import re
-from vendors.base import CustomDeviceHandler
+from vendors.base import CustomDeviceHandler, register_handler
 
 logger = logging.getLogger(__name__)
 
@@ -98,6 +98,7 @@ CISCO_PARSING_RULES = {
     }
 }
 
+@register_handler('cisco', 'legacy', 'telnet')
 class CiscoLegacyTelnetHandler(CustomDeviceHandler):
     """Legacy Cisco 장비 Telnet 핸들러 (username 없이 password만 사용)"""
     

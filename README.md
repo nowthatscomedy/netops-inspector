@@ -4,8 +4,8 @@
 
 ## ✨ 주요 기능
 
-- **다양한 벤더 지원**: Cisco, Juniper 등 여러 네트워크 장비 벤더를 지원합니다.
-- **엑셀 기반 관리**: 점검할 장비 목록을 `devices.xlsx` 파일 하나로 관리합니다.
+- **동적 벤더 확장**: 새로운 벤더 모듈을 추가하기만 하면 자동으로 인식되어, 코드 수정 없이도 손쉽게 지원 장비를 확장할 수 있습니다.
+- **엑셀 기반 관리**: 점검할 장비 목록을 단일 엑셀 파일로 관리하며, 암호화된 파일도 지원합니다.
 - **유연한 연결 방식**: SSH 및 Telnet 프로토콜을 모두 지원합니다.
 - **병렬 처리**: 다수의 장비를 동시에 점검하여 작업 시간을 단축합니다.
 - **자동 결과 리포트**: 점검 결과를 타임스탬프가 포함된 `inspection_results_...xlsx` 파일로 자동 생성합니다.
@@ -32,12 +32,21 @@
 
 ```
 .
-├── network-device-inspection.py  # 메인 스크립트
+├── main.py                       # 메인 스크립트 (프로그램 시작점)
 ├── requirements.txt              # 파이썬 의존성 파일
 ├── devices.xlsx                  # [사용자 생성] 장비 정보 입력 파일
-├── vendors/                      # 벤더별 설정 모듈
+│
+├── core/                         # 핵심 로직 패키지
 │   ├── __init__.py
-│   ├── base.py
+│   ├── inspector.py              # 장비 점검/백업 로직
+│   ├── file_handler.py           # 파일(엑셀) 처리
+│   ├── validator.py              # 데이터 유효성 검증
+│   ├── ui.py                     # GUI(파일/암호 대화상자) 처리
+│   └── custom_exceptions.py      # 사용자 정의 예외
+│
+├── vendors/                      # 벤더별 설정 모듈
+│   ├── __init__.py               # 동적 모듈 로더
+│   ├── base.py                   # 핸들러 기본 클래스 및 자동 등록
 │   ├── cisco.py
 │   └── ... (기타 벤더 파일)
 │
@@ -45,7 +54,7 @@
 │   └── 20230101_120000/
 │       └── 192.168.1.1_cisco_ios.txt
 ├── logs/                         # (자동 생성) 프로그램 실행 로그 디렉토리
-│   └── network_inspector_20230101_120000.log
+│   └── network_inspector_...log
 └── session_logs/                 # (자동 생성) 장비별 세션 로그 디렉토리
     └── 20230101_120000/
         └── 192.168.1.1_cisco_ios.log
@@ -101,16 +110,14 @@
 | ip | vendor | os | connection_type | port | username | password | enable_password |
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
 | 192.168.1.1 | cisco | ios | ssh | 22 | admin | cisco123 | class |
-| 192.168.1.2 | juniper | junos | ssh | 22 | user | juniper! | |
-| 192.168.1.3 | cisco | legacy | telnet | 23 | | cisco | enable_pass |
-| 10.0.0.1 | ubiquoss | e4020 | telnet | 23 | ubi | ubi123 | |
+| 10.0.0.5 | handreamnet | hn | ssh | 22 | user | hn-pass! | enable_pass |
 
 ### 2단계: 스크립트 실행
 
 터미널에서 아래 명령어를 실행합니다.
 
 ```bash
-python network-device-inspection.py
+python main.py
 ```
 
 실행 후, 원하는 작업 모드를 선택합니다.
@@ -138,25 +145,38 @@ python network-device-inspection.py
 
 ## 👨‍💻 개발자를 위하여: 신규 장비 추가하기
 
-이 도구는 새로운 벤더나 장비 모델을 쉽게 추가할 수 있도록 모듈화된 구조로 설계되었습니다.
+이 도구는 **자동 등록(Auto-discovery)** 기능을 통해 새로운 벤더나 장비 모델을 매우 쉽게 추가할 수 있도록 설계되었습니다. `vendors` 디렉토리 외 다른 파일은 수정할 필요가 없습니다.
 
 1.  **벤더 모듈 생성**:
     - `vendors/` 디렉토리에 `[벤더명].py` 파일을 생성합니다. (예: `vendors/new_vendor.py`)
 
 2.  **명령어 및 파싱 규칙 정의**:
-    - 생성한 파일 안에 아래와 같은 딕셔너리들을 정의합니다.
-      - `[벤더명]_INSPECTION_COMMANDS`: 점검에 필요한 명령어 목록
-      - `[벤더명]_BACKUP_COMMANDS`: 백업에 사용할 명령어
-      - `[벤더명]_PARSING_RULES`: 각 명령어의 출력 결과를 파싱하기 위한 정규표현식 또는 커스텀 파싱 함수 규칙
+    - 생성한 파일 안에 `[벤더명]_INSPECTION_COMMANDS`, `[벤더명]_BACKUP_COMMANDS`, `[벤더명]_PARSING_RULES` 딕셔너리들을 정의합니다.
+    - 필요하다면, `parsing_[벤더명]_[기능]` 형태의 커스텀 파싱 함수를 정의합니다.
+    - 정의된 모든 변수와 함수는 `vendors/__init__.py`의 동적 로더가 자동으로 인식합니다.
 
-3.  **커스텀 핸들러 구현 (필요 시)**:
-    - 기본 `netmiko` 로 처리가 어려운 특별한 로그인 절차나 명령어 실행 방식이 필요하다면, `vendors/base.py` 의 `CustomDeviceHandler`를 상속받아 새로운 핸들러 클래스를 구현할 수 있습니다.
-    - 구현한 핸들러는 `vendors/base.py`의 `get_custom_handler` 함수에 등록해야 합니다.
+3.  **커스텀 핸들러 구현 및 등록**:
+    - 특별한 로그인 절차나 명령어 처리가 필요하다면 `CustomDeviceHandler`를 상속받아 새로운 핸들러 클래스를 구현합니다.
+    - 클래스 위에 `@register_handler` 데코레이터를 추가하여 어떤 `벤더`, `OS`, `접속 방식`을 처리할지 명시해주기만 하면 자동으로 등록됩니다.
 
-4.  **패키지 초기화 파일 수정**:
-    - `vendors/__init__.py` 파일에 새로 추가한 벤더의 설정(`..._COMMANDS`, `..._PARSING_RULES`)과 커스텀 파싱 함수들을 임포트하고 `__all__` 리스트에 추가합니다.
+**핸들러 등록 예시 (`vendors/new_vendor.py`):**
+```python
+from vendors.base import CustomDeviceHandler, register_handler
 
-자세한 구현 방식은 `vendors/` 디렉토리 내의 다른 벤더 파일들을 참고하세요.
+# ... (명령어 및 파싱 규칙 정의) ...
+
+@register_handler('new_vendor', 'new_os', 'ssh')
+class NewVendorSSHHandler(CustomDeviceHandler):
+    def connect(self):
+        # ... 접속 로직 구현 ...
+    
+    def enable(self):
+        # ... 특권 모드 진입 로직 구현 ...
+        
+    # ... 기타 메소드 구현 ...
+```
+
+자세한 구현 방식은 `vendors/` 디렉토리 내의 다른 벤더 파일들(`cisco.py`, `handreamnet.py` 등)을 참고하세요.
 
 ## 📄 라이선스
 

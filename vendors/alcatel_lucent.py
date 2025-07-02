@@ -10,7 +10,7 @@ import time
 import logging
 import traceback
 import paramiko
-from vendors.base import CustomDeviceHandler
+from vendors.base import CustomDeviceHandler, register_handler
 
 logger = logging.getLogger(__name__)
 
@@ -340,6 +340,8 @@ ALCATEL_PARSING_RULES = {
     }
 }
 
+@register_handler('alcatel-lucent', 'aos6', 'ssh')
+@register_handler('alcatel-lucent', 'aos8', 'ssh')
 class AlcatelLucentHandler(CustomDeviceHandler):
     """Alcatel-Lucent 장비 핸들러"""
     

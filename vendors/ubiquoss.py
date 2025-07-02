@@ -8,7 +8,7 @@ Ubiquoss 장비의 명령어, 파싱 규칙, 핸들러 클래스를 제공합니
 import telnetlib
 import time
 import logging
-from vendors.base import CustomDeviceHandler
+from vendors.base import CustomDeviceHandler, register_handler
 import paramiko
 import re
 
@@ -169,6 +169,7 @@ UBIQUOSS_PARSING_RULES = {
     }
 }
 
+@register_handler('ubiquoss', 'e4020', 'ssh')
 class UbiquossE4020SSHHandler(CustomDeviceHandler):
     """Ubiquoss E4020 장비 SSH 핸들러"""
     
@@ -413,6 +414,7 @@ class UbiquossE4020SSHHandler(CustomDeviceHandler):
                 log.write(f"세션 완료 (Ubiquoss SSH)\n")
                 log.write(f"{'='*50}\n\n")
 
+@register_handler('ubiquoss', 'e4020', 'telnet')
 class UbiquossE4020Handler(CustomDeviceHandler):
     """유비쿼스 E4020 장비 핸들러"""
     
