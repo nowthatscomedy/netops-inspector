@@ -60,6 +60,7 @@ def get_custom_handler(device, timeout=10, session_log_file=None):
     from vendors.nexg import VForceSSHHandler, VForceTelnetHandler
     from vendors.alcatel_lucent import AlcatelLucentHandler
     from vendors.piolink import PiolinkTifrontSSHHandler
+    from vendors.handreamnet import HandreamnetHnSSHHandler
     
     vendor = device.get('vendor', '').lower()
     model = device.get('os', '').lower()
@@ -92,5 +93,9 @@ def get_custom_handler(device, timeout=10, session_log_file=None):
     elif vendor == 'piolink' and model == 'tifront':
         if connection_type == 'ssh':
             return PiolinkTifrontSSHHandler(device, timeout, session_log_file)
+    # Handreamnet 장비 처리
+    elif vendor == 'handreamnet' and model == 'hn':
+        if connection_type == 'ssh':
+            return HandreamnetHnSSHHandler(device, timeout, session_log_file)
     
     return None 

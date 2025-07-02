@@ -24,6 +24,7 @@
 | `nexg` | `vforce` |
 | `ubiquoss` | `e4020` |
 | `piolink` | `tifront` |
+| `handreamnet` | `hn` |
 
 > **참고**: `devices.xlsx` 파일 작성 시 위 테이블의 `벤더`와 `운영체제` 값을 정확히 사용해야 합니다.
 
