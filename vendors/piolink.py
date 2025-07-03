@@ -30,16 +30,14 @@ def parsing_piolink_port_up_count(output: str) -> str:
                 count += 1
     return str(count)
 
-# TODO: PoE 포트 수 집계 로직 수정 필요. 현재 파싱이 정상적으로 동작하지 않음.
 def parsing_piolink_poe_enable_count(output: str) -> str:
     """piolink 'show poe-info' 명령어 출력에서 Enable 상태인 포트 수 파싱"""
     count = 0
     for line in output.splitlines():
-        # 라인이 포트 정보로 시작하는지 확인 (e.g., ge1)
-        if re.match(r"^\s*ge\d+", line):
-            # 해당 라인에 'Enable' 이라는 단어가 독립적으로 존재하는지 확인합니다.
-            # \b는 단어의 경계를 의미하여, 다른 단어의 일부로 포함된 경우는 제외합니다.
-            if re.search(r"\bEnable\b", line):
+        # 데이터 라인인지 확인 (e.g., "  ge1  | ...")
+        if line.strip().startswith("ge"):
+            parts = [p.strip() for p in line.split('|')]
+            if len(parts) >= 4 and parts[3] == "Enable":
                 count += 1
     return str(count)
 
@@ -245,21 +243,34 @@ class PiolinkTifrontSSHHandler(CustomDeviceHandler):
             self.logger.debug(f"Dynamic command generated: {actual_command}")
 
         if timeout is None:
-            timeout = 10
+            timeout = 20
         
         if not self.channel:
             raise ConnectionError("SSH 채널이 연결되지 않았습니다.")
 
         self.log_output(f"명령어 실행: {actual_command}", "")
         
-        self._read_channel()
+        self._read_channel() # Clear buffer
         
         self.channel.send(actual_command + "\n")
         
-        time.sleep(2)
+        full_output = ""
+        end_time = time.time() + timeout
         
-        output = self._read_channel()
-        
+        while time.time() < end_time:
+            time.sleep(0.5) # Wait for network latency and command execution
+            
+            if self.channel.recv_ready():
+                chunk = self.channel.recv(65535).decode('utf-8', 'ignore')
+                full_output += chunk
+                
+                # Check if command output has ended by finding the prompt
+                if self.prompt and self.prompt in full_output:
+                    break
+        else:
+            self.logger.warning(f"명령어 실행 시간 초과 또는 프롬프트를 찾을 수 없음: {actual_command}")
+
+        output = full_output
         lines = output.splitlines()
         
         if not lines:
@@ -272,6 +283,7 @@ class PiolinkTifrontSSHHandler(CustomDeviceHandler):
             lines = lines[:-1]
 
         cleaned_output = "\n".join(lines).strip()
+        cleaned_output = cleaned_output.replace('\r', '')
         self.log_output("정리된 명령어 결과", cleaned_output)
         
         return cleaned_output

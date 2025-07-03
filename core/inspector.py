@@ -17,7 +17,8 @@ from vendors import (
     INSPECTION_COMMANDS,
     BACKUP_COMMANDS,
     PARSING_RULES,
-    get_custom_handler
+    get_custom_handler,
+    CUSTOM_PARSERS
 )
 
 class NetworkInspector:
@@ -138,11 +139,9 @@ class NetworkInspector:
                 parser_name = rules['custom_parser']
                 column = rules['output_column']
                 
-                # 전역 네임스페이스에서 파서 함수 찾기
-                # 주의: 이 방법은 메인 스크립트에서 파서 함수를 임포트해야 함
-                # 리팩토링 시 이 부분은 변경될 수 있음
-                if parser_name in globals():
-                    parser_func = globals()[parser_name]
+                # CUSTOM_PARSERS 딕셔너리에서 파서 함수 찾기
+                if parser_name in CUSTOM_PARSERS:
+                    parser_func = CUSTOM_PARSERS[parser_name]
                     result[column] = parser_func(output)
                 else:
                     self.logger.error(f"커스텀 파서 함수 '{parser_name}'를 찾을 수 없습니다.")
@@ -167,8 +166,8 @@ class NetworkInspector:
                         parser_name = pattern_rule['custom_parser']
                         column = pattern_rule['output_column']
                         
-                        if parser_name in globals():
-                            parser_func = globals()[parser_name]
+                        if parser_name in CUSTOM_PARSERS:
+                            parser_func = CUSTOM_PARSERS[parser_name]
                             result[column] = parser_func(output)
                         else:
                             self.logger.error(f"커스텀 파서 함수 '{parser_name}'를 찾을 수 없습니다.")
@@ -520,6 +519,10 @@ class NetworkInspector:
                     completed_devices += 1
                     self.logger.info(f"진행 상황: {completed_devices}/{total_devices} 장비 처리 완료")
         
+        # 장비 정보 순서대로 결과 정렬
+        device_order = {device['ip']: i for i, device in enumerate(self.devices)}
+        self.results.sort(key=lambda r: device_order.get(r.get('ip'), float('inf')))
+        
         if backup_only:
             self.logger.info("장비 백업 완료")
         else:
@@ -562,6 +565,10 @@ class NetworkInspector:
                 finally:
                     completed_devices += 1
                     self.logger.info(f"진행 상황: {completed_devices}/{total_devices} 장비 처리 완료")
+        
+        # 장비 정보 순서대로 결과 정렬
+        device_order = {device['ip']: i for i, device in enumerate(self.devices)}
+        self.results.sort(key=lambda r: device_order.get(r.get('ip'), float('inf')))
         
         self.logger.info("장비 점검 및 백업 완료")
 
