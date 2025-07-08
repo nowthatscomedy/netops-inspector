@@ -25,6 +25,35 @@ def parsing_dayou_memory_usage(output: str) -> str:
             return f"{usage}%"
     return ""
 
+def parsing_dayou_poe_count(output: str) -> str:
+    """DAYOU 'show poe power' 명령어 출력에서 PoE 사용 포트 수 파싱"""
+    count = 0
+    for line in output.splitlines():
+        if re.match(r'^\s*g\d+/\d+', line.strip()):
+            parts = line.split()
+            if len(parts) >= 2:
+                try:
+                    current_power = int(parts[1])
+                    if current_power > 0:
+                        count += 1
+                except (ValueError, IndexError):
+                    continue
+    return str(count)
+
+def parsing_dayou_up_port_count(output: str) -> str:
+    """DAYOU 'show interface brief' 명령어 출력에서 UP 상태인 포트 수 파싱"""
+    count = 0
+    for line in output.splitlines():
+        line = line.strip()
+        if not line or line.lower().startswith('port'):
+            continue
+        parts = line.split()
+        if len(parts) >= 2:
+            port, status = parts[0], parts[1].lower()
+            if not port.startswith('v') and status == 'up':
+                count += 1
+    return str(count)
+
 # DAYOU 장비 점검 명령어 정의
 DAYOU_INSPECTION_COMMANDS = {
     'dayou': {
@@ -32,6 +61,8 @@ DAYOU_INSPECTION_COMMANDS = {
             'show version',
             'show cpu',
             'show memory static | include total',
+            'show poe power',
+            'show interface brief',
         ]
     }
 }
@@ -70,7 +101,7 @@ DAYOU_PARSING_RULES = {
                         'first_match_only': True
                     },
                     {
-                        'pattern': r'Serial num:(\S+)',
+                        'pattern': r'Serial num:([^,]+)',
                         'output_column': 'Serial Number',
                         'first_match_only': True
                     }
@@ -84,6 +115,14 @@ DAYOU_PARSING_RULES = {
             'show memory static | include total': {
                 'custom_parser': 'parsing_dayou_memory_usage',
                 'output_column': 'Memory Usage %'
+            },
+            'show poe power': {
+                'custom_parser': 'parsing_dayou_poe_count',
+                'output_column': 'PoE Port Count'
+            },
+            'show interface brief': {
+                'custom_parser': 'parsing_dayou_up_port_count',
+                'output_column': 'UP Port Count'
             }
         }
     }
