@@ -137,12 +137,19 @@ class NetworkInspector:
             # 커스텀 파서 함수 호출 처리
             if 'custom_parser' in rules:
                 parser_name = rules['custom_parser']
-                column = rules['output_column']
                 
                 # CUSTOM_PARSERS 딕셔너리에서 파서 함수 찾기
                 if parser_name in CUSTOM_PARSERS:
                     parser_func = CUSTOM_PARSERS[parser_name]
-                    result[column] = parser_func(output)
+                    parsed_value = parser_func(output)
+
+                    # 파서가 딕셔너리를 반환하면, 결과를 직접 업데이트
+                    if isinstance(parsed_value, dict):
+                        result.update(parsed_value)
+                    # 그렇지 않으면, 지정된 컬럼에 할당
+                    elif 'output_column' in rules:
+                        column = rules['output_column']
+                        result[column] = parsed_value
                 else:
                     self.logger.error(f"커스텀 파서 함수 '{parser_name}'를 찾을 수 없습니다.")
 

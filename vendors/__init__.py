@@ -111,6 +111,14 @@ from vendors.piolink import (
     parsing_piolink_port_up_count,
     parsing_piolink_poe_enable_count
 )
+# Ruckus 커스텀 파서 임포트
+from vendors.ruckus import (
+    parsing_ruckus_power,
+    parsing_ruckus_fan,
+    parsing_ruckus_temp,
+    parsing_ruckus_memory,
+    parsing_ruckus_cpu,
+)
 
 # 명시적으로 외부에 노출할 이름들을 정의합니다.
 __all__ = [
@@ -134,5 +142,10 @@ __all__ = [
     'parsing_ubiquoss_power_status',
     'parsing_piolink_login_count',
     'parsing_piolink_port_up_count',
-    'parsing_piolink_poe_enable_count'
+    'parsing_piolink_poe_enable_count',
+    'parsing_ruckus_power',
+    'parsing_ruckus_fan',
+    'parsing_ruckus_temp',
+    'parsing_ruckus_memory',
+    'parsing_ruckus_cpu',
 ] 

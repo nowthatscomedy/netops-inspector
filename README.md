@@ -4,12 +4,13 @@
 
 ## ✨ 주요 기능
 
-- **동적 벤더 확장**: 새로운 벤더 모듈을 추가하기만 하면 자동으로 인식되어, 코드 수정 없이도 손쉽게 지원 장비를 확장할 수 있습니다.
+- **동적 벤더 확장**: `vendors` 폴더에 새로운 벤더 모듈을 추가하기만 하면 자동으로 인식되어, 코드 수정 없이도 손쉽게 지원 장비를 확장할 수 있습니다.
+- **자동 핸들러 등록**: `@register_handler` 데코레이터를 사용하여 벤더, OS, 접속 방식에 맞는 커스텀 핸들러를 간편하게 등록하고 관리할 수 있습니다.
 - **엑셀 기반 관리**: 점검할 장비 목록을 단일 엑셀 파일로 관리하며, 암호화된 파일도 지원합니다.
 - **유연한 연결 방식**: SSH 및 Telnet 프로토콜을 모두 지원합니다.
 - **병렬 처리**: 다수의 장비를 동시에 점검하여 작업 시간을 단축합니다.
-- **자동 결과 리포트**: 점검 결과를 타임스탬프가 포함된 `inspection_results_...xlsx` 파일로 자동 생성합니다.
-- **상세 로그**: 모든 작업 과정과 장비와의 통신 내용을 로그 파일로 기록하여 문제 발생 시 원인 파악이 용이합니다.
+- **자동 결과 리포트**: 점검 결과를 타임스탬프가 포함된 `inspection_results_...xlsx` 파일로 자동 생성하며, 접속 실패 항목은 하이라이트 처리됩니다.
+- **상세 로그**: 모든 작업 과정과 장비와의 통신 내용을 세션별 로그 파일로 기록하여 문제 발생 시 원인 파악이 용이합니다.
 - **선택적 실행 모드**: '점검만', '백업만', 또는 '점검과 백업 모두' 실행할 수 있습니다.
 - **안정적인 실행**: 연결 실패 시 자동으로 재시도하는 등 오류 처리 로직이 포함되어 있습니다.
 
@@ -17,14 +18,16 @@
 
 | 벤더 (Vendor) | 운영체제 (OS) |
 | :--- | :--- |
-| `cisco` | `ios`, `ios-xe`, `legacy` |
-| `juniper` | `junos` |
 | `alcatel-lucent` | `aos6`, `aos8` |
 | `axgate` | `axgate` |
-| `nexg` | `vforce` |
-| `ubiquoss` | `e4020` |
-| `piolink` | `tifront` |
+| `cisco` | `ios`, `ios-xe`, `legacy` |
+| `dayou` | `dsw` |
 | `handreamnet` | `hn` |
+| `juniper` | `junos` |
+| `nexg` | `vforce` |
+| `piolink` | `tifront` |
+| `ruckus` | `icx` |
+| `ubiquoss` | `e4020` |
 
 > **참고**: `devices.xlsx` 파일 작성 시 위 테이블의 `벤더`와 `운영체제` 값을 정확히 사용해야 합니다.
 
@@ -37,24 +40,33 @@
 ├── devices.xlsx                  # [사용자 생성] 장비 정보 입력 파일
 │
 ├── core/                         # 핵심 로직 패키지
-│   ├── __init__.py
-│   ├── inspector.py              # 장비 점검/백업 로직
+│   ├── inspector.py              # 장비 점검/백업 로직 및 다중 처리
 │   ├── file_handler.py           # 파일(엑셀) 처리
 │   ├── validator.py              # 데이터 유효성 검증
 │   ├── ui.py                     # GUI(파일/암호 대화상자) 처리
 │   └── custom_exceptions.py      # 사용자 정의 예외
 │
 ├── vendors/                      # 벤더별 설정 모듈
-│   ├── __init__.py               # 동적 모듈 로더
+│   ├── __init__.py               # 동적 모듈/파서 로더
 │   ├── base.py                   # 핸들러 기본 클래스 및 자동 등록
+│   ├── alcatel_lucent.py
+│   ├── axgate.py
 │   ├── cisco.py
-│   └── ... (기타 벤더 파일)
+│   ├── dayou.py
+│   ├── handreamnet.py
+│   ├── juniper.py
+│   ├── nexg.py
+│   ├── piolink.py
+│   ├── ruckus.py
+│   └── ubiquoss.py
 │
 ├── backup/                       # (자동 생성) 설정 백업 디렉토리
 │   └── 20230101_120000/
 │       └── 192.168.1.1_cisco_ios.txt
+│
 ├── logs/                         # (자동 생성) 프로그램 실행 로그 디렉토리
 │   └── network_inspector_...log
+│
 └── session_logs/                 # (자동 생성) 장비별 세션 로그 디렉토리
     └── 20230101_120000/
         └── 192.168.1.1_cisco_ios.log
@@ -110,7 +122,8 @@
 | ip | vendor | os | connection_type | port | username | password | enable_password |
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
 | 192.168.1.1 | cisco | ios | ssh | 22 | admin | cisco123 | class |
-| 10.0.0.5 | handreamnet | hn | ssh | 22 | user | hn-pass! | enable_pass |
+| 10.0.0.5 | ruckus | icx | ssh | 22 | super | sp-pass | |
+| 172.16.0.1 | dayou | dsw | ssh | 22 | dayou | dayou123 | dayou_en |
 
 ### 2단계: 스크립트 실행
 
@@ -131,6 +144,8 @@ python main.py
 실행할 작업을 선택하세요 (1-3):
 ```
 
+GUI 창이 나타나면 `devices.xlsx` 파일을 선택합니다. 파일이 암호화된 경우, 암호 입력창이 나타납니다.
+
 ### 3단계: 결과 확인
 
 작업이 완료되면 아래와 같은 결과물들이 생성됩니다.
@@ -142,6 +157,23 @@ python main.py
 - **로그**: `logs/` 및 `session_logs/`
   - 스크립트 실행 로그와 각 장비와의 자세한 통신 로그가 기록되어, 문제 해결에 도움을 줍니다.
 
+## 📦 실행 파일 (EXE) 생성
+
+`PyInstaller`를 사용하여 이 프로그램을 단일 실행 파일로 만들 수 있습니다.
+
+1.  **PyInstaller 설치**
+    ```bash
+    pip install pyinstaller
+    ```
+
+2.  **EXE 파일 빌드**
+    이 프로젝트는 `vendors` 디렉토리의 모듈들을 동적으로 불러오므로, 빌드 시 `--hidden-import` 옵션을 사용하여 각 벤더 모듈을 직접 명시해주어야 합니다.
+    ```powershell
+    pyinstaller --onefile --name "NetworkInspector" --hidden-import "vendors.alcatel_lucent" --hidden-import "vendors.axgate" --hidden-import "vendors.cisco" --hidden-import "vendors.dayou" --hidden-import "vendors.handreamnet" --hidden-import "vendors.juniper" --hidden-import "vendors.nexg" --hidden-import "vendors.piolink" --hidden-import "vendors.ruckus" --hidden-import "vendors.ubiquoss" main.py
+    ```
+
+3.  **결과 확인**
+    빌드가 완료되면 `dist` 폴더에 `NetworkInspector.exe` 파일이 생성됩니다.
 
 ## 👨‍💻 개발자를 위하여: 신규 장비 추가하기
 
@@ -152,8 +184,7 @@ python main.py
 
 2.  **명령어 및 파싱 규칙 정의**:
     - 생성한 파일 안에 `[벤더명]_INSPECTION_COMMANDS`, `[벤더명]_BACKUP_COMMANDS`, `[벤더명]_PARSING_RULES` 딕셔너리들을 정의합니다.
-    - 필요하다면, `parsing_[벤더명]_[기능]` 형태의 커스텀 파싱 함수를 정의합니다.
-    - 정의된 모든 변수와 함수는 `vendors/__init__.py`의 동적 로더가 자동으로 인식합니다.
+    - 필요하다면, `parsing_[벤더명]_[기능]` 형태의 커스텀 파싱 함수를 정의하고 `vendors/__init__.py`에 등록합니다.
 
 3.  **커스텀 핸들러 구현 및 등록**:
     - 특별한 로그인 절차나 명령어 처리가 필요하다면 `CustomDeviceHandler`를 상속받아 새로운 핸들러 클래스를 구현합니다.
@@ -176,7 +207,7 @@ class NewVendorSSHHandler(CustomDeviceHandler):
     # ... 기타 메소드 구현 ...
 ```
 
-자세한 구현 방식은 `vendors/` 디렉토리 내의 다른 벤더 파일들(`cisco.py`, `handreamnet.py` 등)을 참고하세요.
+자세한 구현 방식은 `vendors/` 디렉토리 내의 다른 벤더 파일들(`cisco.py`, `ruckus.py` 등)을 참고하세요.
 
 ## 📄 라이선스
 
