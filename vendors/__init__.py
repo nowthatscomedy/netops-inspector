@@ -11,7 +11,7 @@ logger = logging.getLogger(__name__)
 # 각 벤더 모듈에서 필요한 딕셔너리들을 임포트
 from .axgate import AXGATE_INSPECTION_COMMANDS, AXGATE_BACKUP_COMMANDS, AXGATE_PARSING_RULES
 from .cisco import CISCO_INSPECTION_COMMANDS, CISCO_BACKUP_COMMANDS, CISCO_PARSING_RULES
-from .alcatel_lucent import ALCATEL_INSPECTION_COMMANDS, ALCATEL_BACKUP_COMMANDS, ALCATEL_PARSING_RULES
+from .alcatel_lucent import ALCATEL_LUCENT_INSPECTION_COMMANDS, ALCATEL_LUCENT_BACKUP_COMMANDS, ALCATEL_LUCENT_PARSING_RULES
 from .juniper import JUNIPER_INSPECTION_COMMANDS, JUNIPER_BACKUP_COMMANDS, JUNIPER_PARSING_RULES
 from .nexg import NEXG_INSPECTION_COMMANDS, NEXG_BACKUP_COMMANDS, NEXG_PARSING_RULES
 from .ubiquoss import UBIQUOSS_INSPECTION_COMMANDS, UBIQUOSS_BACKUP_COMMANDS, UBIQUOSS_PARSING_RULES
@@ -41,8 +41,9 @@ def _load_vendor_modules():
             module = importlib.import_module(f'.{name}', pkg_name)
             
             # --- 명령어 및 파싱 규칙 로드 ---
-            vendor_name = name.split('_')[0] # ex) 'alcatel_lucent' -> 'alcatel-lucent'
-            if 'alcatel' in vendor_name: vendor_name = 'alcatel-lucent'
+            # vendor_name = name.split('_')[0] # ex) 'alcatel_lucent' -> 'alcatel-lucent'
+            # if 'alcatel' in vendor_name: vendor_name = 'alcatel-lucent'
+            vendor_name = name.replace('_', '-') # ex) 'alcatel_lucent' -> 'alcatel-lucent'
 
             # 1. 점검 명령어 로드
             cmd_dict_name = f"{name.upper()}_INSPECTION_COMMANDS"

@@ -15,7 +15,7 @@ from vendors.base import CustomDeviceHandler, register_handler
 logger = logging.getLogger(__name__)
 
 # Alcatel-Lucent 장비 점검 명령어 정의
-ALCATEL_INSPECTION_COMMANDS = {
+ALCATEL_LUCENT_INSPECTION_COMMANDS = {
     'alcatel-lucent': {
         'aos6': [
             'show configuration snapshot',
@@ -43,7 +43,7 @@ ALCATEL_INSPECTION_COMMANDS = {
 }
 
 # Alcatel-Lucent 장비 설정 백업 명령어 정의
-ALCATEL_BACKUP_COMMANDS = {
+ALCATEL_LUCENT_BACKUP_COMMANDS = {
     'alcatel-lucent': {
         'aos6': 'show configuration snapshot',
         'aos8': 'show configuration snapshot'
@@ -219,7 +219,7 @@ def parsing_alcatel_memory(output):
         return ""
 
 # Alcatel-Lucent 장비 출력 파싱 규칙
-ALCATEL_PARSING_RULES = {
+ALCATEL_LUCENT_PARSING_RULES = {
     'alcatel-lucent': {
         'aos6': {
             'show configuration snapshot': {
