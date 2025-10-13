@@ -16,8 +16,68 @@ logger = logging.getLogger(__name__)
 
 # --- Piolink 커스텀 파싱 함수들 ---
 def parsing_piolink_login_count(output: str) -> str:
-    """piolink 'show log user' 명령어 출력에서 월별 로그인 수 파싱"""
-    count = output.count("Log In")
+    """piolink 'show log user' 전체 출력에서 최신 연도 구간의 해당 월 'Log In' 횟수 파싱
+
+    규칙:
+    - 로그는 최신 연도가 앞쪽에 오며, 월이 역순으로 진행되다 12->1로 넘어가는 지점에서 연도가 바뀌었다고 가정
+    - 해당 지점 이전(상단)만 최신 연도 로그로 간주
+    - 대상 월은 현재 달(현 시스템 시간 기준)
+    - 라인에서 월 표기는 영문 약어(Jan..Dec) 또는 한국어 'n월' 모두 지원
+    """
+    lines = output.splitlines()
+
+    # 월 매핑 (영문 약어 → 숫자)
+    month_map = {
+        'jan': 1, 'feb': 2, 'mar': 3, 'apr': 4, 'may': 5, 'jun': 6,
+        'jul': 7, 'aug': 8, 'sep': 9, 'oct': 10, 'nov': 11, 'dec': 12,
+    }
+
+    # 현재 월 (대상 월)
+    try:
+        target_month = int(datetime.datetime.now().strftime('%m'))
+    except Exception:
+        target_month = None
+
+    # 각 라인에서 월 번호 추출 함수
+    def extract_month_number(line: str):
+        # 영문 약어 우선
+        m = re.search(r'\b(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\b', line, re.IGNORECASE)
+        if m:
+            return month_map.get(m.group(1).lower())
+        # 한국어 n월
+        m2 = re.search(r'(1[0-2]|[1-9])\s*월', line)
+        if m2:
+            try:
+                return int(m2.group(1))
+            except ValueError:
+                return None
+        return None
+
+    # 최신 연도 경계 탐지: 월 번호가 증가하는 첫 지점
+    last_month = None
+    boundary_index = len(lines)  # 기본값: 경계 없음 → 전체가 최신 연도
+    for idx, line in enumerate(lines):
+        month_num = extract_month_number(line)
+        if month_num is None:
+            continue
+        if last_month is not None and month_num > last_month:
+            boundary_index = idx
+            break
+        last_month = month_num
+
+    # 최신 연도 구간(0 ~ boundary_index-1) 중 대상 월의 'Log In' 카운트
+    if target_month is None:
+        # 안전장치: 대상 월을 알 수 없으면 최신 연도 구간 전체에서 'Log In' 카운트
+        latest_lines = lines[:boundary_index]
+        return str(sum(1 for ln in latest_lines if 'Log In' in ln))
+
+    count = 0
+    for ln in lines[:boundary_index]:
+        if 'Log In' not in ln:
+            continue
+        ln_month = extract_month_number(ln)
+        if ln_month == target_month:
+            count += 1
     return str(count)
 
 def parsing_piolink_port_up_count(output: str) -> str:
@@ -51,6 +111,7 @@ PIOLINK_INSPECTION_COMMANDS = {
             'show_log_user_this_month', # 동적 명령어 플레이스홀더
             'show portstatus',
             'show poe-info',
+            'show uptime',
             'show running-config' # For hostname
         ]
     }
@@ -120,7 +181,12 @@ PIOLINK_PARSING_RULES = {
             },
             'show poe-info': {
                 'custom_parser': 'parsing_piolink_poe_enable_count',
-                'output_column': 'PoE Enabled Port Count'
+                'output_column': 'PoE Port Count'
+            },
+            'show uptime': {
+                'pattern': r'^(\d+\s+days)\b',
+                'output_column': 'Uptime',
+                'first_match_only': True
             },
             'show running-config': {
                 'pattern': r'^hostname\s+(\S+)',
@@ -238,8 +304,8 @@ class PiolinkTifrontSSHHandler(CustomDeviceHandler):
         """명령어 실행"""
         actual_command = command
         if command == 'show_log_user_this_month':
-            month_abbr = datetime.datetime.now().strftime('%b')
-            actual_command = f'show log user | include {month_abbr}'
+            # 연도 경계 감지를 위해 전체 로그를 본다 (include 제거)
+            actual_command = 'show log user'
             self.logger.debug(f"Dynamic command generated: {actual_command}")
 
         if timeout is None:

@@ -6,15 +6,17 @@ from core.file_handler import read_excel_file, save_results_to_excel
 from core.validator import validate_dataframe
 from core.ui import get_filepath_from_dialog, get_password_from_dialog
 from core.custom_exceptions import NetworkInspectorError
+from core.logging_config import init_logging
 
-# 로깅 기본 설정
-logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - [%(threadName)s] - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
 def main():
     """메인 함수"""
     inspector = None
     try:
+        # 전역 로깅 일관 설정 (파일+콘솔)
+        init_logging(console_level=logging.DEBUG, file_level=logging.DEBUG)
+
         output_excel = "inspection_results.xlsx"
         
         print("\n=== 네트워크 장비 점검 및 백업 도구 ===")

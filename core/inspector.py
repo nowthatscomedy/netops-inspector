@@ -29,7 +29,8 @@ class NetworkInspector:
         self.output_excel = f"{file_name}_{timestamp}{file_ext}"
         self.max_retries = 3  # 최대 재시도 횟수
         self.timeout = 10  # 연결 타임아웃 (초)
-        self.setup_logging()
+        # 공통 로깅 설정 사용 (root 로거 기반)
+        self.logger = logging.getLogger(__name__)
         # 동일한 타임스탬프 사용
         self.backup_dir = os.path.join("backup", timestamp)
         self.session_log_dir = os.path.join("session_logs", timestamp)
@@ -51,29 +52,7 @@ class NetworkInspector:
         self.results_lock = threading.Lock()
         self.log_lock = threading.Lock()
         
-    def setup_logging(self):
-        """로깅 설정을 초기화합니다."""
-        log_dir = "logs"
-        os.makedirs(log_dir, exist_ok=True)
-        log_file = os.path.join(log_dir, f"network_inspector_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log")
-        
-        # 로그 파일 핸들러 설정 - 쓰레드 식별정보 추가
-        file_handler = logging.FileHandler(log_file, encoding='utf-8')
-        file_handler.setFormatter(logging.Formatter('%(asctime)s - [%(threadName)s] - %(levelname)s - %(message)s'))
-        
-        # 로거 설정
-        self.logger = logging.getLogger(__name__)
-        self.logger.setLevel(logging.DEBUG)  # DEBUG 레벨로 변경
-        
-        # 기존 핸들러 제거
-        for handler in self.logger.handlers[:]:
-            self.logger.removeHandler(handler)
-        
-        # 새로운 핸들러 추가
-        self.logger.addHandler(file_handler)
-        
-        self.logger.info("로깅 초기화 완료")
-        self.logger.debug(f"로그 파일 경로: {log_file}")
+    
 
     def _get_device_commands(self, vendor: str, model: str) -> List[str]:
         """장비별 점검 명령어를 가져옵니다."""
