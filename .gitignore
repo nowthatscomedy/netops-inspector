@@ -39,6 +39,7 @@ backup/
 session_logs/
 logs/
 .env
+settings.json
 
 # Logs
 *.log
