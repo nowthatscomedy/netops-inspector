@@ -3,6 +3,8 @@ import os
 import msvcrt
 import sys
 import shutil
+import re
+import unicodedata
 from datetime import datetime
 from pathlib import Path
 
@@ -16,6 +18,101 @@ from core.settings import load_settings, save_settings, AppSettings
 
 logger = logging.getLogger(__name__)
 
+BANNER = [
+    " _   _      _                      _   _           _            ",
+    "| \\ | | ___| |___      _____  _ __| \\ | | ___   __| | ___ _ __  ",
+    "|  \\| |/ _ \\ __\\ \\ /\\ / / _ \\| '__|  \\| |/ _ \\ / _` |/ _ \\ '__| ",
+    "| |\\  |  __/ |_ \\ V  V / (_) | |  | |\\  | (_) | (_| |  __/ |    ",
+    "|_| \\_|\\___|\\__| \\_/\\_/ \\___/|_|  |_| \\_|\\___/ \\__,_|\\___|_|    ",
+]
+
+try:
+    from colorama import Fore, Style, init as colorama_init
+except Exception:
+    Fore = None
+    Style = None
+    colorama_init = None
+
+if colorama_init is not None:
+    colorama_init(autoreset=True)
+
+ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
+
+def _strip_ansi(text: str) -> str:
+    return ANSI_RE.sub("", text)
+
+def _text_width(text: str) -> int:
+    cleaned = _strip_ansi(text.rstrip())
+    width = 0
+    for ch in cleaned:
+        if ch == "\t":
+            width += 4
+            continue
+        if unicodedata.east_asian_width(ch) in ("W", "F"):
+            width += 2
+        else:
+            width += 1
+    return width
+
+def _color(text: str, color: str) -> str:
+    if Fore is None or Style is None:
+        return text
+    return f"{color}{text}{Style.RESET_ALL}"
+
+def _with_banner(hints: list[str] | None) -> list[str]:
+    """메뉴 힌트에 배너를 일관되게 포함"""
+    lines = [line.rstrip() for line in BANNER]
+    if hints:
+        lines.extend(line.rstrip() for line in hints)
+    return lines
+
+def _pad(text: str, width: int, align: str = "left") -> str:
+    plain_len = _text_width(text)
+    if plain_len >= width:
+        return text
+    if align == "center":
+        left = (width - plain_len) // 2
+        right = width - plain_len - left
+        return (" " * left) + text + (" " * right)
+    return text + (" " * (width - plain_len))
+
+def _print_menu_frame(title: str, hints: list[str] | None, options: list[str], selected: int) -> None:
+    control_line = "조작: ↑/↓ 이동, Enter 선택"
+    hint_lines = [line.rstrip() for line in (hints or [])]
+    option_lines = [
+        (( ">> " if i == selected else "   ") + option).rstrip()
+        for i, option in enumerate(options)
+    ]
+
+    measure_lines = [control_line, *hint_lines, *option_lines]
+    if title:
+        measure_lines.append(title)
+    width = max(_text_width(line) for line in measure_lines) if measure_lines else 0
+
+    top = "+" + "=" * (width + 2) + "+"
+    mid = "+" + "-" * (width + 2) + "+"
+
+    print(top)
+    if title:
+        title_text = _color(title, Fore.CYAN + Style.BRIGHT) if Fore and Style else title
+        print("| " + _pad(title_text, width, align="center") + " |")
+        print(mid)
+
+    if hint_lines:
+        for line in hint_lines:
+            print("| " + _pad(line, width) + " |")
+        print("| " + _pad("", width) + " |")
+
+    control_text = _color(control_line, Fore.YELLOW) if Fore else control_line
+    print("| " + _pad(control_text, width) + " |")
+    print(mid)
+
+    for i, line in enumerate(option_lines):
+        if i == selected and Fore and Style:
+            line = _color(line, Fore.GREEN + Style.BRIGHT)
+        print("| " + _pad(line, width) + " |")
+    print(top)
+
 def select_menu(
     title: str,
     options: list[str],
@@ -26,17 +123,7 @@ def select_menu(
     selected = max(0, min(selected_index, len(options) - 1))
     while True:
         os.system("cls")
-        print("=========================================")
-        if title:
-            print(title)
-        if hints:
-            for line in hints:
-                print(line)
-        print("조작: ↑/↓ 이동, Enter 선택")
-        print("-----------------------------------------")
-        for i, option in enumerate(options):
-            prefix = ">> " if i == selected else "   "
-            print(f"{prefix}{option}")
+        _print_menu_frame(title, hints, options, selected)
 
         key = msvcrt.getwch()
         if key in ("\r", "\n"):
@@ -56,10 +143,10 @@ def show_main_menu() -> str:
         f"설정 변경 (로그 출력: {settings.console_log_level})",
         "종료"
     ]
-    hints = [
+    hints = _with_banner([
         "네트워크 장비 점검 프로그램",
         "원하는 작업을 선택하세요.",
-    ]
+    ])
     index = select_menu("메인 메뉴", options, hints=hints)
     return str(index + 1)
 
@@ -71,10 +158,10 @@ def show_action_menu() -> str | None:
         "점검 + 백업 (둘 다)",
         "뒤로가기",
     ]
-    mode_hints = [
+    mode_hints = _with_banner([
         "실행할 작업을 선택하세요.",
         "백업은 장비 설정 파일을 저장합니다.",
-    ]
+    ])
     choice_index = select_menu("작업 선택", mode_options, hints=mode_hints)
     if choice_index == 3:
         return None
@@ -95,10 +182,10 @@ def select_console_log_level(current_level: str) -> str:
         selected_index = level_map.index(current_level)
     except ValueError:
         selected_index = 3
-    hints = [
+    hints = _with_banner([
         f"[현재] 콘솔 로그 레벨: {current_level}",
-        "일반 사용자라면 'INFO 이상'을 권장합니다.",
-    ]
+        "일반 사용자라면 'WARNING 이상'을 권장합니다.",
+    ])
     index = select_menu("콘솔 로그 레벨 설정", options, selected_index, hints=hints)
     if index == 5:
         return current_level
@@ -111,10 +198,10 @@ def show_settings_menu(settings: AppSettings) -> None:
             f"콘솔 로그 레벨 변경 (현재: {settings.console_log_level})",
             "뒤로가기",
         ]
-        hints = [
+        hints = _with_banner([
             "설정 메뉴",
             "로그 출력이 너무 많다면 'WARNING 이상'으로 줄이세요.",
-        ]
+        ])
         choice = select_menu("설정", options, hints=hints)
         if choice == 0:
             settings.console_log_level = select_console_log_level(settings.console_log_level)
@@ -269,16 +356,6 @@ def main():
         )
 
         output_excel = "inspection_results.xlsx"
-        
-        banner = [
-            " _   _      _                      _   _           _            ",
-            "| \\ | | ___| |___      _____  _ __| \\ | | ___   __| | ___ _ __  ",
-            "|  \\| |/ _ \\ __\\ \\ /\\ / / _ \\| '__|  \\| |/ _ \\ / _` |/ _ \\ '__| ",
-            "| |\\  |  __/ |_ \\ V  V / (_) | |  | |\\  | (_) | (_| |  __/ |    ",
-            "|_| \\_|\\___|\\__| \\_/\\_/ \\___/|_|  |_| \\_|\\___/ \\__,_|\\___|_|    ",
-        ]
-        for line in banner:
-            logger.info(line)
         logger.info("RUN ID   : %s", run_timestamp)
         logger.info("LOG FILE : %s", log_file)
         logger.info("-----------------------------------------")
