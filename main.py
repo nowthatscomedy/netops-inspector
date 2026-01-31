@@ -1,14 +1,31 @@
 import logging
 from datetime import datetime
+from pathlib import Path
 
 from core.inspector import NetworkInspector
 from core.file_handler import read_excel_file, save_results_to_excel
 from core.validator import validate_dataframe
-from core.ui import get_filepath_from_dialog, get_password_from_dialog
+from core.ui import get_password_from_dialog
 from core.custom_exceptions import NetworkInspectorError
 from core.logging_config import init_logging
 
 logger = logging.getLogger(__name__)
+
+def get_filepath_from_cli() -> str | None:
+    """CLI에서 엑셀 파일 경로 입력 받기"""
+    raw_input = input(">> 엑셀 파일 경로를 입력하세요 (예: test.xlsx 또는 C:\\Users\\PC\\Desktop\\test.xlsx): ").strip()
+    if not raw_input:
+        return None
+
+    # 따옴표로 감싼 경로 처리
+    cleaned = raw_input.strip('"').strip("'")
+    path = Path(cleaned).expanduser()
+
+    if not path.exists():
+        logger.warning("입력한 파일을 찾을 수 없습니다: %s", path)
+        return None
+
+    return str(path)
 
 def main():
     """메인 함수"""
@@ -46,10 +63,10 @@ def main():
         if choice in mode_map:
             logger.info("MODE    : %s", mode_map[choice])
 
-        # 파일 선택
-        filepath = get_filepath_from_dialog()
+        # 파일 경로 입력 (CLI)
+        filepath = get_filepath_from_cli()
         if not filepath:
-            logger.warning("파일이 선택되지 않았습니다. 프로그램을 종료합니다.")
+            logger.warning("파일 경로가 입력되지 않았습니다. 프로그램을 종료합니다.")
             return
         logger.info("INPUT   : %s", filepath)
             
