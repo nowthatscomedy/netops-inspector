@@ -180,6 +180,9 @@ LOG FILE : logs/network_inspector_20240101_120000.log
 메뉴에서는 `WARNING 이상`, `INFO 이상`처럼 임계값 형태로 표시됩니다. 단, 진행 상황 안내 메시지는 로그 레벨과 무관하게 항상 출력됩니다.
 
 - `console_log_level`: `CRITICAL`, `ERROR`, `WARNING`, `INFO`, `DEBUG` 중 하나
+- `inspection_excludes`: 점검 제외 설정(벤더/OS/파싱 항목 단위)
+  - 메인 메뉴 → 설정 → 점검 제외 설정에서 선택 가능
+  - 파싱 항목은 `명령어::컬럼명` 형식으로 저장됩니다
 
 ## 📦 실행 파일 (EXE) 생성
 

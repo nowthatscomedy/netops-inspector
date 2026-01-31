@@ -23,7 +23,14 @@ from vendors import (
 )
 
 class NetworkInspector:
-    def __init__(self, output_excel: str, backup_only: bool = False, inspection_only: bool = False, run_timestamp: str | None = None):
+    def __init__(
+        self,
+        output_excel: str,
+        backup_only: bool = False,
+        inspection_only: bool = False,
+        run_timestamp: str | None = None,
+        inspection_excludes: Dict[str, Dict[str, List[str]]] | None = None
+    ):
         # 출력 파일명에 타임스탬프 추가
         file_name, file_ext = os.path.splitext(output_excel)
         timestamp = run_timestamp or datetime.now().strftime('%Y%m%d_%H%M%S')
@@ -55,6 +62,7 @@ class NetworkInspector:
         self.results_lock = threading.Lock()
         self.log_lock = threading.Lock()
         self.cli_lock = threading.Lock()
+        self.inspection_excludes = inspection_excludes or {}
         
     
 
@@ -65,6 +73,17 @@ class NetworkInspector:
             v = str(vendor).strip().lower()
             m = str(model).strip().lower()
             cmds = INSPECTION_COMMANDS.get(v, {}).get(m, [])
+            excludes = set(self.inspection_excludes.get(v, {}).get(m, []))
+            if excludes:
+                filtered_cmds: List[str] = []
+                for cmd in cmds:
+                    if cmd in excludes:
+                        continue
+                    parse_ids = self._get_parse_ids_for_command(v, m, cmd)
+                    if parse_ids and parse_ids.issubset(excludes):
+                        continue
+                    filtered_cmds.append(cmd)
+                cmds = filtered_cmds
             if not cmds:
                 self.logger.warning(f"점검 명령어를 찾을 수 없음: {v} {m}")
             else:
@@ -94,11 +113,14 @@ class NetworkInspector:
         """명령어 출력을 파싱합니다."""
         self.logger.debug(f"명령어 출력 파싱 시작: {command}")
         result = {}
-        
-        # 먼저 해당 벤더/모델/명령어에 대한 파싱 규칙이 존재하는지 확인
         vendor_lower = str(vendor).lower()
         model_lower = str(model).lower()
+        excludes = set(self.inspection_excludes.get(vendor_lower, {}).get(model_lower, []))
+        if command in excludes:
+            self.logger.debug(f"파싱 제외(명령어 단위): {command}")
+            return result
         
+        # 먼저 해당 벤더/모델/명령어에 대한 파싱 규칙이 존재하는지 확인
         # PARSING_RULES에 해당 벤더가 없는 경우
         if vendor_lower not in PARSING_RULES:
             self.logger.debug(f"파싱 규칙 없음 (벤더): {vendor}")
@@ -240,7 +262,55 @@ class NetworkInspector:
         except (KeyError, AttributeError) as e:
             self.logger.warning(f"파싱 실패: {str(e)}")
             self.logger.debug(f"파싱 실패 예외 상세: {traceback.format_exc()}")
+        if excludes:
+            filtered = {}
+            for key, value in result.items():
+                parse_id = f"{command}::{key}"
+                if parse_id in excludes:
+                    continue
+                filtered[key] = value
+            result = filtered
+
         return result
+
+    def _get_parse_ids_for_command(self, vendor: str, model: str, command: str) -> set[str]:
+        rules = PARSING_RULES.get(vendor, {}).get(model, {}).get(command, {})
+        if not isinstance(rules, dict):
+            return set()
+
+        parse_ids: set[str] = set()
+
+        def add_column(column: str) -> None:
+            if column:
+                parse_ids.add(f"{command}::{column}")
+
+        if "custom_parser" in rules:
+            add_column(str(rules.get("output_column", "")).strip())
+        elif "pattern" in rules:
+            add_column(str(rules.get("output_column", "")).strip())
+            process = rules.get("process", {})
+            if isinstance(process, dict):
+                add_column(str(process.get("output_column", "")).strip())
+        elif "patterns" in rules:
+            for pattern_rule in rules.get("patterns", []):
+                if not isinstance(pattern_rule, dict):
+                    continue
+                if "custom_parser" in pattern_rule:
+                    add_column(str(pattern_rule.get("output_column", "")).strip())
+                output_columns = pattern_rule.get("output_columns", [])
+                if isinstance(output_columns, list):
+                    for col in output_columns:
+                        if isinstance(col, str):
+                            add_column(col.strip())
+                add_column(str(pattern_rule.get("output_column", "")).strip())
+                process = pattern_rule.get("process", {})
+                if isinstance(process, dict):
+                    add_column(str(process.get("output_column", "")).strip())
+        else:
+            add_column(str(rules.get("output_column", "")).strip())
+
+        parse_ids.discard(f"{command}::")
+        return parse_ids
     
     def _test_tcping(self, ip: str, port: int, timeout: int = 5) -> bool:
         """TCP 연결 테스트를 수행합니다."""

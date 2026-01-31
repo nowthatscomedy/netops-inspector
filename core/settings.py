@@ -1,16 +1,51 @@
 import json
-from dataclasses import dataclass, asdict
+from dataclasses import dataclass, asdict, field
 from pathlib import Path
+from typing import Dict, List
 
 
 @dataclass
 class AppSettings:
     console_log_level: str = "WARNING"
+    inspection_excludes: Dict[str, Dict[str, List[str]]] = field(default_factory=dict)
 
 
 def get_settings_path() -> Path:
     project_root = Path(__file__).resolve().parents[1]
     return project_root / "settings.json"
+
+
+def _normalize_excludes(raw: object) -> Dict[str, Dict[str, List[str]]]:
+    if not isinstance(raw, dict):
+        return {}
+
+    normalized: Dict[str, Dict[str, List[str]]] = {}
+    for vendor_key, os_map in raw.items():
+        if not isinstance(vendor_key, str) or not isinstance(os_map, dict):
+            continue
+        vendor = vendor_key.strip().lower()
+        if not vendor:
+            continue
+
+        normalized_os: Dict[str, List[str]] = {}
+        for os_key, commands in os_map.items():
+            if not isinstance(os_key, str) or not isinstance(commands, list):
+                continue
+            os_name = os_key.strip().lower()
+            if not os_name:
+                continue
+
+            cleaned_commands = []
+            for cmd in commands:
+                if isinstance(cmd, str) and cmd.strip():
+                    cleaned_commands.append(cmd.strip())
+            if cleaned_commands:
+                normalized_os[os_name] = cleaned_commands
+
+        if normalized_os:
+            normalized[vendor] = normalized_os
+
+    return normalized
 
 
 def load_settings() -> AppSettings:
@@ -27,7 +62,12 @@ def load_settings() -> AppSettings:
     if not isinstance(console_log_level, str) or not console_log_level:
         console_log_level = "WARNING"
 
-    return AppSettings(console_log_level=console_log_level.upper())
+    inspection_excludes = _normalize_excludes(data.get("inspection_excludes", {}))
+
+    return AppSettings(
+        console_log_level=console_log_level.upper(),
+        inspection_excludes=inspection_excludes
+    )
 
 
 def save_settings(settings: AppSettings) -> None:

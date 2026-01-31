@@ -15,6 +15,7 @@ from core.ui import get_password_from_dialog
 from core.custom_exceptions import NetworkInspectorError
 from core.logging_config import init_logging
 from core.settings import load_settings, save_settings, AppSettings
+from vendors import INSPECTION_COMMANDS, PARSING_RULES
 
 logger = logging.getLogger(__name__)
 
@@ -196,6 +197,7 @@ def show_settings_menu(settings: AppSettings) -> None:
     while True:
         options = [
             f"콘솔 로그 레벨 변경 (현재: {settings.console_log_level})",
+            "점검 제외 설정",
             "뒤로가기",
         ]
         hints = _with_banner([
@@ -208,9 +210,173 @@ def show_settings_menu(settings: AppSettings) -> None:
             save_settings(settings)
             print("설정이 저장되었습니다.")
         elif choice == 1:
+            show_inspection_exclude_menu(settings)
+        elif choice == 2:
             return
         else:
             print("잘못된 선택입니다. 다시 시도하세요.")
+
+
+def _get_excluded_set(settings: AppSettings, vendor: str, os_name: str) -> set[str]:
+    vendor_key = vendor.lower()
+    os_key = os_name.lower()
+    return set(settings.inspection_excludes.get(vendor_key, {}).get(os_key, []))
+
+
+def _is_parse_excluded(excludes: set[str], command: str, parse_id: str) -> bool:
+    return parse_id in excludes or command in excludes
+
+
+def _toggle_exclude(settings: AppSettings, vendor: str, os_name: str, parse_id: str) -> None:
+    vendor_key = vendor.lower()
+    os_key = os_name.lower()
+    vendor_map = settings.inspection_excludes.setdefault(vendor_key, {})
+    cmd_list = vendor_map.setdefault(os_key, [])
+
+    if parse_id in cmd_list:
+        cmd_list = [cmd for cmd in cmd_list if cmd != parse_id]
+        if cmd_list:
+            vendor_map[os_key] = cmd_list
+        else:
+            vendor_map.pop(os_key, None)
+            if not vendor_map:
+                settings.inspection_excludes.pop(vendor_key, None)
+    else:
+        cmd_list.append(parse_id)
+        vendor_map[os_key] = cmd_list
+
+    save_settings(settings)
+
+
+def _collect_parsing_items(vendor: str, os_name: str) -> list[dict]:
+    vendor_key = vendor.lower()
+    os_key = os_name.lower()
+    rules_by_command = PARSING_RULES.get(vendor_key, {}).get(os_key, {})
+    items: list[dict] = []
+    seen = set()
+
+    for command, rules in rules_by_command.items():
+        if not isinstance(rules, dict):
+            continue
+
+        def add_item(column: str) -> None:
+            if not column:
+                return
+            parse_id = f"{command}::{column}"
+            if parse_id in seen:
+                return
+            seen.add(parse_id)
+            items.append({
+                "command": command,
+                "column": column,
+                "id": parse_id,
+                "label": f"{column}  ({command})"
+            })
+
+        if "custom_parser" in rules:
+            column = rules.get("output_column", "").strip()
+            if column:
+                add_item(column)
+        elif "pattern" in rules:
+            column = rules.get("output_column", "").strip()
+            if column:
+                add_item(column)
+            process = rules.get("process", {})
+            if isinstance(process, dict):
+                process_column = str(process.get("output_column", "")).strip()
+                if process_column:
+                    add_item(process_column)
+        elif "patterns" in rules:
+            for pattern_rule in rules.get("patterns", []):
+                if not isinstance(pattern_rule, dict):
+                    continue
+                if "custom_parser" in pattern_rule:
+                    column = str(pattern_rule.get("output_column", "")).strip()
+                    if column:
+                        add_item(column)
+                output_columns = pattern_rule.get("output_columns", [])
+                if isinstance(output_columns, list):
+                    for col in output_columns:
+                        if isinstance(col, str) and col.strip():
+                            add_item(col.strip())
+                column = str(pattern_rule.get("output_column", "")).strip()
+                if column:
+                    add_item(column)
+                process = pattern_rule.get("process", {})
+                if isinstance(process, dict):
+                    process_column = str(process.get("output_column", "")).strip()
+                    if process_column:
+                        add_item(process_column)
+        else:
+            column = rules.get("output_column", "").strip()
+            if column:
+                add_item(column)
+
+    return items
+
+
+def show_inspection_exclude_menu(settings: AppSettings) -> None:
+    while True:
+        vendors = sorted(INSPECTION_COMMANDS.keys())
+        options = [vendor for vendor in vendors] + ["뒤로가기"]
+        hints = _with_banner([
+            "점검 제외 설정",
+            "벤더를 선택하세요.",
+        ])
+        choice = select_menu("점검 제외 - 벤더 선택", options, hints=hints)
+        if choice == len(vendors):
+            return
+        vendor = vendors[choice]
+        _show_inspection_exclude_os_menu(settings, vendor)
+
+
+def _show_inspection_exclude_os_menu(settings: AppSettings, vendor: str) -> None:
+    while True:
+        os_list = sorted(INSPECTION_COMMANDS.get(vendor, {}).keys())
+        options = [os_name for os_name in os_list] + ["뒤로가기"]
+        hints = _with_banner([
+            f"벤더: {vendor}",
+            "OS를 선택하세요.",
+        ])
+        choice = select_menu("점검 제외 - OS 선택", options, hints=hints)
+        if choice == len(os_list):
+            return
+        os_name = os_list[choice]
+        _show_inspection_exclude_commands_menu(settings, vendor, os_name)
+
+
+def _show_inspection_exclude_commands_menu(settings: AppSettings, vendor: str, os_name: str) -> None:
+    selected_index = 0
+    while True:
+        excluded = _get_excluded_set(settings, vendor, os_name)
+        items = _collect_parsing_items(vendor, os_name)
+        if not items:
+            hints = _with_banner([
+                f"벤더: {vendor} / OS: {os_name}",
+                "파싱 항목이 없습니다.",
+            ])
+            select_menu("점검 제외 - 항목 선택", ["뒤로가기"], 0, hints=hints)
+            return
+        options: list[str] = []
+        for item in items:
+            parse_id = item["id"]
+            command = item["command"]
+            status = "제외" if _is_parse_excluded(excluded, command, parse_id) else "포함"
+            label = f"[{status}] {item['label']}"
+            if status == "포함" and Fore and Style:
+                label = _color(label, Fore.CYAN + Style.BRIGHT)
+            options.append(label)
+        options.append("뒤로가기")
+
+        hints = _with_banner([
+            f"벤더: {vendor} / OS: {os_name}",
+            "Enter로 포함/제외를 전환합니다. (파싱 항목 기준)",
+        ])
+        choice = select_menu("점검 제외 - 항목 선택", options, selected_index, hints=hints)
+        if choice == len(options) - 1:
+            return
+        selected_index = choice
+        _toggle_exclude(settings, vendor, os_name, items[choice]["id"])
 
 def _autocomplete_path(partial: str, extensions: tuple[str, ...]) -> str:
     if not partial:
@@ -385,15 +551,29 @@ def main():
         devices = devices_df.to_dict('records')
 
         if choice == "1":
-            inspector = NetworkInspector(output_excel, inspection_only=True, run_timestamp=run_timestamp)
+            inspector = NetworkInspector(
+                output_excel,
+                inspection_only=True,
+                run_timestamp=run_timestamp,
+                inspection_excludes=settings.inspection_excludes
+            )
             inspector.load_devices(devices)
             inspector.inspect_devices(backup_only=False)
         elif choice == "2":
-            inspector = NetworkInspector(output_excel, backup_only=True, run_timestamp=run_timestamp)
+            inspector = NetworkInspector(
+                output_excel,
+                backup_only=True,
+                run_timestamp=run_timestamp,
+                inspection_excludes=settings.inspection_excludes
+            )
             inspector.load_devices(devices)
             inspector.inspect_devices(backup_only=True)
         elif choice == "3":
-            inspector = NetworkInspector(output_excel, run_timestamp=run_timestamp)
+            inspector = NetworkInspector(
+                output_excel,
+                run_timestamp=run_timestamp,
+                inspection_excludes=settings.inspection_excludes
+            )
             inspector.load_devices(devices)
             inspector.inspect_and_backup_devices()
         else:
