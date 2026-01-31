@@ -311,6 +311,73 @@ class NetworkInspector:
 
         parse_ids.discard(f"{command}::")
         return parse_ids
+
+    def _get_output_columns_for_command(self, vendor: str, model: str, command: str) -> List[str]:
+        """명령어에 매핑되는 출력 컬럼 목록을 순서대로 반환합니다."""
+        vendor_key = str(vendor).strip().lower()
+        model_key = str(model).strip().lower()
+        rules = PARSING_RULES.get(vendor_key, {}).get(model_key, {}).get(command, {})
+        if not isinstance(rules, dict):
+            return []
+
+        columns: List[str] = []
+
+        def add_column(column: str | None) -> None:
+            if not column:
+                return
+            cleaned = str(column).strip()
+            if cleaned and cleaned not in columns:
+                columns.append(cleaned)
+
+        if "custom_parser" in rules:
+            add_column(rules.get("output_column"))
+        elif "pattern" in rules:
+            add_column(rules.get("output_column"))
+            process = rules.get("process", {})
+            if isinstance(process, dict):
+                add_column(process.get("output_column"))
+        elif "patterns" in rules:
+            for pattern_rule in rules.get("patterns", []):
+                if not isinstance(pattern_rule, dict):
+                    continue
+                if "custom_parser" in pattern_rule:
+                    add_column(pattern_rule.get("output_column"))
+                output_columns = pattern_rule.get("output_columns", [])
+                if isinstance(output_columns, list):
+                    for col in output_columns:
+                        add_column(col)
+                add_column(pattern_rule.get("output_column"))
+                process = pattern_rule.get("process", {})
+                if isinstance(process, dict):
+                    add_column(process.get("output_column"))
+        else:
+            add_column(rules.get("output_column"))
+
+        return columns
+
+    def get_available_inspection_columns(self, devices: List[Dict]) -> List[str]:
+        """장비 목록 기준으로 점검 결과 컬럼을 순서대로 수집합니다."""
+        ordered_columns: List[str] = []
+        seen: set[str] = set()
+
+        for device in devices:
+            vendor = str(device.get("vendor", "")).strip()
+            model = str(device.get("os", "")).strip()
+            vendor_key = vendor.lower()
+            model_key = model.lower()
+            excludes = set(self.inspection_excludes.get(vendor_key, {}).get(model_key, []))
+
+            commands = self._get_device_commands(vendor, model)
+            for cmd in commands:
+                for col in self._get_output_columns_for_command(vendor, model, cmd):
+                    parse_id = f"{cmd}::{col}"
+                    if cmd in excludes or parse_id in excludes:
+                        continue
+                    if col not in seen:
+                        seen.add(col)
+                        ordered_columns.append(col)
+
+        return ordered_columns
     
     def _test_tcping(self, ip: str, port: int, timeout: int = 5) -> bool:
         """TCP 연결 테스트를 수행합니다."""

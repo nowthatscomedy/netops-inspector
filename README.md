@@ -66,6 +66,10 @@ python main.py
 3) 엑셀 파일 경로 입력  
 탭 자동완성을 지원하며, 암호화된 파일은 암호 입력을 요청합니다.
 
+4) (점검 포함 시) 결과 열 순서 설정  
+작업 실행 전에 열 순서를 정할지 묻습니다.  
+`y`를 선택하면 점검 항목 목록에서 Enter로 이동 모드를 전환하여 순서를 변경합니다.
+
 ## 결과물
 
 - 점검 결과: `results/inspection_results_YYYYMMDD_HHMMSS.xlsx`
@@ -80,6 +84,7 @@ python main.py
 - `console_log_level`: `CRITICAL`, `ERROR`, `WARNING`, `INFO`, `DEBUG`
 - `inspection_excludes`: 벤더/OS/파싱 항목 단위 제외 설정  
   - 값은 `명령어` 또는 `명령어::컬럼명` 형태로 저장됩니다.
+  - 설정 메뉴에서 단계별 모두 포함/제외 지원 (전체/벤더/OS), 변경 시 `y/N` 확인
 
 ## 프로젝트 구조
 

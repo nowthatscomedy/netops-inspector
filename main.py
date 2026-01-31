@@ -136,6 +136,125 @@ def select_menu(
             elif key == "P":  # Down
                 selected = (selected + 1) % len(options)
 
+def _print_reorder_frame(
+    title: str,
+    hints: list[str] | None,
+    entries: list[dict],
+    selected: int,
+    moving: bool
+) -> None:
+    control_line = "조작: ↑/↓ 이동, Enter: 선택/모드 전환"
+    status_line = "현재 - 이동 모드: 선택 항목 위치 변경" if moving else "현재 - 선택 모드: 항목/메뉴 선택"
+    hint_lines = [line.rstrip() for line in (hints or [])]
+    option_lines = []
+
+    for i, entry in enumerate(entries):
+        cursor = ">> " if i == selected else "   "
+        if entry["type"] == "item":
+            marker = "*" if moving and i == selected else " "
+            option_lines.append(f"{cursor}[{marker}] {entry['label']}")
+        else:
+            option_lines.append(f"{cursor}{entry['label']}")
+
+    measure_lines = [control_line, status_line, *hint_lines, *option_lines]
+    if title:
+        measure_lines.append(title)
+    width = max(_text_width(line) for line in measure_lines) if measure_lines else 0
+
+    top = "+" + "=" * (width + 2) + "+"
+    mid = "+" + "-" * (width + 2) + "+"
+
+    print(top)
+    if title:
+        title_text = _color(title, Fore.CYAN + Style.BRIGHT) if Fore and Style else title
+        print("| " + _pad(title_text, width, align="center") + " |")
+        print(mid)
+
+    if hint_lines:
+        for line in hint_lines:
+            print("| " + _pad(line, width) + " |")
+        print("| " + _pad("", width) + " |")
+
+    control_text = _color(control_line, Fore.YELLOW) if Fore else control_line
+    print("| " + _pad(control_text, width) + " |")
+    print("| " + _pad(status_line, width) + " |")
+    print(mid)
+
+    for i, line in enumerate(option_lines):
+        if i == selected and Fore and Style:
+            line = _color(line, Fore.GREEN + Style.BRIGHT)
+        print("| " + _pad(line, width) + " |")
+    print(top)
+
+
+def reorder_columns_interactive(columns: list[str]) -> list[str] | None:
+    """CLI에서 점검 항목 순서를 재정렬합니다."""
+    if not columns:
+        return []
+
+    original_items = list(columns)
+    items = list(columns)
+    selected = 0
+    moving = False
+
+    hints = _with_banner([
+        "점검 결과 열 순서를 정합니다.",
+        "항목을 선택하고 Enter로 이동 모드를 전환합니다.",
+    ])
+
+    while True:
+        os.system("cls")
+        entries = (
+            [{"type": "action", "id": "start", "label": "현재 순서로 시작"}]
+            + [{"type": "item", "id": f"item:{idx}", "label": item} for idx, item in enumerate(items)]
+            + [
+                {"type": "action", "id": "reset", "label": "순서 초기화"},
+                {"type": "action", "id": "back", "label": "뒤로가기"},
+            ]
+        )
+        _print_reorder_frame("열 순서 편집", hints, entries, selected, moving)
+
+        key = msvcrt.getwch()
+        if key in ("\r", "\n"):
+            entry = entries[selected]
+            if entry["type"] == "action":
+                if entry["id"] == "start":
+                    return items
+                if entry["id"] == "reset":
+                    items = list(original_items)
+                    selected = 0
+                    moving = False
+                    continue
+                if entry["id"] == "back":
+                    return None
+            else:
+                moving = not moving
+            continue
+        if key in ("\x00", "\xe0"):
+            key = msvcrt.getwch()
+            if key == "H":  # Up
+                if moving:
+                    item_indices = [i for i, entry in enumerate(entries) if entry["type"] == "item"]
+                    current_pos = item_indices.index(selected)
+                    if current_pos > 0:
+                        swap_target = item_indices[current_pos - 1]
+                        item_idx = selected - 1
+                        items[item_idx], items[item_idx - 1] = items[item_idx - 1], items[item_idx]
+                        selected = swap_target
+                else:
+                    selected = (selected - 1) % len(entries)
+            elif key == "P":  # Down
+                if moving:
+                    item_indices = [i for i, entry in enumerate(entries) if entry["type"] == "item"]
+                    current_pos = item_indices.index(selected)
+                    if current_pos < len(item_indices) - 1:
+                        swap_target = item_indices[current_pos + 1]
+                        item_idx = selected - 1
+                        items[item_idx], items[item_idx + 1] = items[item_idx + 1], items[item_idx]
+                        selected = swap_target
+                else:
+                    selected = (selected + 1) % len(entries)
+
 def show_main_menu() -> str:
     """프로그램 시작 메뉴"""
     settings = load_settings()
@@ -248,6 +367,79 @@ def _toggle_exclude(settings: AppSettings, vendor: str, os_name: str, parse_id: 
     save_settings(settings)
 
 
+def _build_exclude_list_for_os(vendor: str, os_name: str) -> list[str]:
+    items = _collect_parsing_items(vendor, os_name)
+    return [item["id"] for item in items]
+
+
+def _set_excludes_all(settings: AppSettings, exclude_all: bool) -> None:
+    if not exclude_all:
+        if settings.inspection_excludes:
+            settings.inspection_excludes.clear()
+            save_settings(settings)
+        return
+
+    new_map: dict[str, dict[str, list[str]]] = {}
+    for vendor in INSPECTION_COMMANDS.keys():
+        vendor_key = vendor.lower()
+        vendor_map: dict[str, list[str]] = {}
+        for os_name in INSPECTION_COMMANDS.get(vendor, {}).keys():
+            os_key = os_name.lower()
+            items = _build_exclude_list_for_os(vendor, os_name)
+            if items:
+                vendor_map[os_key] = items
+        if vendor_map:
+            new_map[vendor_key] = vendor_map
+    settings.inspection_excludes = new_map
+    save_settings(settings)
+
+
+def _set_excludes_vendor(settings: AppSettings, vendor: str, exclude_all: bool) -> None:
+    vendor_key = vendor.lower()
+    if not exclude_all:
+        if vendor_key in settings.inspection_excludes:
+            settings.inspection_excludes.pop(vendor_key, None)
+            save_settings(settings)
+        return
+
+    vendor_map: dict[str, list[str]] = {}
+    for os_name in INSPECTION_COMMANDS.get(vendor, {}).keys():
+        os_key = os_name.lower()
+        items = _build_exclude_list_for_os(vendor, os_name)
+        if items:
+            vendor_map[os_key] = items
+    if vendor_map:
+        settings.inspection_excludes[vendor_key] = vendor_map
+    else:
+        settings.inspection_excludes.pop(vendor_key, None)
+    save_settings(settings)
+
+
+def _set_excludes_os(settings: AppSettings, vendor: str, os_name: str, exclude_all: bool) -> None:
+    vendor_key = vendor.lower()
+    os_key = os_name.lower()
+    vendor_map = settings.inspection_excludes.setdefault(vendor_key, {})
+    if exclude_all:
+        items = _build_exclude_list_for_os(vendor, os_name)
+        if items:
+            vendor_map[os_key] = items
+            settings.inspection_excludes[vendor_key] = vendor_map
+        else:
+            vendor_map.pop(os_key, None)
+            if not vendor_map:
+                settings.inspection_excludes.pop(vendor_key, None)
+        save_settings(settings)
+        return
+
+    if os_key in vendor_map:
+        vendor_map.pop(os_key, None)
+        if vendor_map:
+            settings.inspection_excludes[vendor_key] = vendor_map
+        else:
+            settings.inspection_excludes.pop(vendor_key, None)
+        save_settings(settings)
+
+
 def _collect_parsing_items(vendor: str, os_name: str) -> list[dict]:
     vendor_key = vendor.lower()
     os_key = os_name.lower()
@@ -318,13 +510,23 @@ def _collect_parsing_items(vendor: str, os_name: str) -> list[dict]:
 def show_inspection_exclude_menu(settings: AppSettings) -> None:
     while True:
         vendors = sorted(INSPECTION_COMMANDS.keys())
-        options = [vendor for vendor in vendors] + ["뒤로가기"]
+        options = [vendor for vendor in vendors] + ["점검 항목 모두 포함", "점검 항목 모두 제외", "뒤로가기"]
         hints = _with_banner([
             "점검 제외 설정",
             "벤더를 선택하세요.",
         ])
         choice = select_menu("점검 제외 - 벤더 선택", options, hints=hints)
         if choice == len(vendors):
+            if _ask_yes_no("모든 점검 항목을 포함으로 변경할까요?"):
+                _set_excludes_all(settings, False)
+                print("모든 점검 항목이 포함으로 변경되었습니다.")
+            continue
+        if choice == len(vendors) + 1:
+            if _ask_yes_no("모든 점검 항목을 제외로 변경할까요?"):
+                _set_excludes_all(settings, True)
+                print("모든 점검 항목이 제외로 변경되었습니다.")
+            continue
+        if choice == len(vendors) + 2:
             return
         vendor = vendors[choice]
         _show_inspection_exclude_os_menu(settings, vendor)
@@ -333,13 +535,23 @@ def show_inspection_exclude_menu(settings: AppSettings) -> None:
 def _show_inspection_exclude_os_menu(settings: AppSettings, vendor: str) -> None:
     while True:
         os_list = sorted(INSPECTION_COMMANDS.get(vendor, {}).keys())
-        options = [os_name for os_name in os_list] + ["뒤로가기"]
+        options = [os_name for os_name in os_list] + ["해당 벤더 항목 모두 포함", "해당 벤더 항목 모두 제외", "뒤로가기"]
         hints = _with_banner([
             f"벤더: {vendor}",
             "OS를 선택하세요.",
         ])
         choice = select_menu("점검 제외 - OS 선택", options, hints=hints)
         if choice == len(os_list):
+            if _ask_yes_no(f"벤더 '{vendor}'의 점검 항목을 모두 포함으로 변경할까요?"):
+                _set_excludes_vendor(settings, vendor, False)
+                print(f"벤더 '{vendor}'의 점검 항목이 모두 포함으로 변경되었습니다.")
+            continue
+        if choice == len(os_list) + 1:
+            if _ask_yes_no(f"벤더 '{vendor}'의 점검 항목을 모두 제외로 변경할까요?"):
+                _set_excludes_vendor(settings, vendor, True)
+                print(f"벤더 '{vendor}'의 점검 항목이 모두 제외로 변경되었습니다.")
+            continue
+        if choice == len(os_list) + 2:
             return
         os_name = os_list[choice]
         _show_inspection_exclude_commands_menu(settings, vendor, os_name)
@@ -366,6 +578,8 @@ def _show_inspection_exclude_commands_menu(settings: AppSettings, vendor: str, o
             if status == "포함" and Fore and Style:
                 label = _color(label, Fore.CYAN + Style.BRIGHT)
             options.append(label)
+        options.append("해당 OS 항목 모두 포함")
+        options.append("해당 OS 항목 모두 제외")
         options.append("뒤로가기")
 
         hints = _with_banner([
@@ -375,6 +589,18 @@ def _show_inspection_exclude_commands_menu(settings: AppSettings, vendor: str, o
         choice = select_menu("점검 제외 - 항목 선택", options, selected_index, hints=hints)
         if choice == len(options) - 1:
             return
+        if choice == len(options) - 3:
+            if _ask_yes_no(f"OS '{os_name}'의 점검 항목을 모두 포함으로 변경할까요?"):
+                _set_excludes_os(settings, vendor, os_name, False)
+                print(f"OS '{os_name}'의 점검 항목이 모두 포함으로 변경되었습니다.")
+                selected_index = 0
+            continue
+        if choice == len(options) - 2:
+            if _ask_yes_no(f"OS '{os_name}'의 점검 항목을 모두 제외로 변경할까요?"):
+                _set_excludes_os(settings, vendor, os_name, True)
+                print(f"OS '{os_name}'의 점검 항목이 모두 제외로 변경되었습니다.")
+                selected_index = 0
+            continue
         selected_index = choice
         _toggle_exclude(settings, vendor, os_name, items[choice]["id"])
 
@@ -469,6 +695,14 @@ def _input_with_tab_completion(prompt: str, extensions: tuple[str, ...]) -> str:
         buffer += key
         previous_length = _redraw_input(prompt, buffer, previous_length)
 
+def _ask_yes_no(prompt: str, default: bool = False) -> bool:
+    """간단한 Y/N 입력을 처리합니다."""
+    suffix = " (Y/n): " if default else " (y/N): "
+    answer = input(f"{prompt}{suffix}").strip().lower()
+    if not answer:
+        return default
+    return answer in ("y", "yes")
+
 def get_filepath_from_cli() -> str | None:
     """CLI에서 엑셀 파일 경로 입력 받기"""
     raw_input = _input_with_tab_completion(
@@ -490,106 +724,135 @@ def get_filepath_from_cli() -> str | None:
 
 def main():
     """메인 함수"""
-    inspector = None
     try:
-        settings = load_settings()
-
         while True:
-            menu_choice = show_main_menu()
-            if menu_choice == "1":
+            inspector = None
+            settings = load_settings()
+
+            while True:
+                menu_choice = show_main_menu()
+                if menu_choice == "1":
+                    break
+                if menu_choice == "2":
+                    show_settings_menu(settings)
+                    continue
+                if menu_choice == "3":
+                    print("프로그램을 종료합니다.")
+                    return
+                print("잘못된 선택입니다. 다시 시도하세요.")
+
+            while True:
                 action_choice = show_action_menu()
                 if action_choice is None:
-                    continue
+                    break
                 choice = action_choice
-                break
-            if menu_choice == "2":
-                show_settings_menu(settings)
-                continue
-            if menu_choice == "3":
-                print("프로그램을 종료합니다.")
+
+                console_level = getattr(logging, settings.console_log_level, logging.INFO)
+
+                # 전역 로깅 일관 설정 (파일+콘솔) 및 실행 타임스탬프 고정
+                run_timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+                log_file = init_logging(
+                    run_timestamp=run_timestamp,
+                    console_level=console_level,
+                    file_level=logging.DEBUG,
+                    enable_color=True
+                )
+
+                output_excel = "inspection_results.xlsx"
+                logger.info("RUN ID   : %s", run_timestamp)
+                logger.info("LOG FILE : %s", log_file)
+                logger.info("-----------------------------------------")
+                mode_map = {"1": "점검", "2": "백업", "3": "점검+백업"}
+                if choice in mode_map:
+                    logger.info("MODE    : %s", mode_map[choice])
+
+                # 파일 경로 입력 (CLI)
+                filepath = get_filepath_from_cli()
+                if not filepath:
+                    logger.warning("파일 경로가 입력되지 않았습니다. 프로그램을 종료합니다.")
+                    return
+                logger.info("INPUT   : %s", filepath)
+                    
+                # 파일 읽기 시도
+                try:
+                    devices_df = read_excel_file(filepath)
+                except Exception:
+                    password = get_password_from_dialog()
+                    if not password:
+                        logger.warning("암호가 입력되지 않았습니다. 프로그램을 종료합니다.")
+                        return
+                    devices_df = read_excel_file(filepath, password=password)
+
+                # 데이터 유효성 검사
+                validate_dataframe(devices_df)
+                devices = devices_df.to_dict('records')
+
+                column_order = None
+                cancel_requested = False
+                if choice == "1":
+                    inspector = NetworkInspector(
+                        output_excel,
+                        inspection_only=True,
+                        run_timestamp=run_timestamp,
+                        inspection_excludes=settings.inspection_excludes
+                    )
+                elif choice == "2":
+                    inspector = NetworkInspector(
+                        output_excel,
+                        backup_only=True,
+                        run_timestamp=run_timestamp,
+                        inspection_excludes=settings.inspection_excludes
+                    )
+                elif choice == "3":
+                    inspector = NetworkInspector(
+                        output_excel,
+                        run_timestamp=run_timestamp,
+                        inspection_excludes=settings.inspection_excludes
+                    )
+                else:
+                    logger.warning("잘못된 선택입니다. 1-3 사이의 숫자를 입력하세요.")
+                    return
+
+                inspector.load_devices(devices)
+
+                if choice in ("1", "3"):
+                    if _ask_yes_no("점검 결과 열 순서를 정할까요?", default=False):
+                        available_columns = inspector.get_available_inspection_columns(inspector.devices)
+                        if available_columns:
+                            reordered = reorder_columns_interactive(available_columns)
+                            if reordered is None:
+                                cancel_requested = True
+                            else:
+                                column_order = reordered
+                        else:
+                            logger.info("정렬할 점검 항목이 없습니다.")
+
+                if cancel_requested:
+                    logger.info("작업이 취소되었습니다.")
+                    continue
+
+                if choice == "1":
+                    inspector.inspect_devices(backup_only=False)
+                elif choice == "2":
+                    inspector.inspect_devices(backup_only=True)
+                else:
+                    inspector.inspect_and_backup_devices()
+
+                # 결과 저장
+                if inspector and inspector.results:
+                    save_results_to_excel(
+                        inspector.results,
+                        inspector.output_excel,
+                        column_order=column_order
+                    )
+                    logger.info("작업이 완료되었습니다.")
+                    logger.info(f"결과 파일: {inspector.output_excel}")
+                    logger.info(f"결과 디렉토리: {inspector.output_dir}")
+                    if not inspector.inspection_only:
+                        logger.info(f"백업 디렉토리: {inspector.backup_dir}")
+                else:
+                    logger.info("처리된 결과가 없어 파일을 저장하지 않았습니다.")
                 return
-            print("잘못된 선택입니다. 다시 시도하세요.")
-
-        console_level = getattr(logging, settings.console_log_level, logging.INFO)
-
-        # 전역 로깅 일관 설정 (파일+콘솔) 및 실행 타임스탬프 고정
-        run_timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-        log_file = init_logging(
-            run_timestamp=run_timestamp,
-            console_level=console_level,
-            file_level=logging.DEBUG,
-            enable_color=True
-        )
-
-        output_excel = "inspection_results.xlsx"
-        logger.info("RUN ID   : %s", run_timestamp)
-        logger.info("LOG FILE : %s", log_file)
-        logger.info("-----------------------------------------")
-        mode_map = {"1": "점검", "2": "백업", "3": "점검+백업"}
-        if choice in mode_map:
-            logger.info("MODE    : %s", mode_map[choice])
-
-        # 파일 경로 입력 (CLI)
-        filepath = get_filepath_from_cli()
-        if not filepath:
-            logger.warning("파일 경로가 입력되지 않았습니다. 프로그램을 종료합니다.")
-            return
-        logger.info("INPUT   : %s", filepath)
-            
-        # 파일 읽기 시도
-        try:
-            devices_df = read_excel_file(filepath)
-        except Exception:
-            password = get_password_from_dialog()
-            if not password:
-                logger.warning("암호가 입력되지 않았습니다. 프로그램을 종료합니다.")
-                return
-            devices_df = read_excel_file(filepath, password=password)
-
-        # 데이터 유효성 검사
-        validate_dataframe(devices_df)
-        devices = devices_df.to_dict('records')
-
-        if choice == "1":
-            inspector = NetworkInspector(
-                output_excel,
-                inspection_only=True,
-                run_timestamp=run_timestamp,
-                inspection_excludes=settings.inspection_excludes
-            )
-            inspector.load_devices(devices)
-            inspector.inspect_devices(backup_only=False)
-        elif choice == "2":
-            inspector = NetworkInspector(
-                output_excel,
-                backup_only=True,
-                run_timestamp=run_timestamp,
-                inspection_excludes=settings.inspection_excludes
-            )
-            inspector.load_devices(devices)
-            inspector.inspect_devices(backup_only=True)
-        elif choice == "3":
-            inspector = NetworkInspector(
-                output_excel,
-                run_timestamp=run_timestamp,
-                inspection_excludes=settings.inspection_excludes
-            )
-            inspector.load_devices(devices)
-            inspector.inspect_and_backup_devices()
-        else:
-            logger.warning("잘못된 선택입니다. 1-3 사이의 숫자를 입력하세요.")
-            return
-        
-        # 결과 저장
-        if inspector and inspector.results:
-            save_results_to_excel(inspector.results, inspector.output_excel)
-            logger.info("작업이 완료되었습니다.")
-            logger.info(f"결과 파일: {inspector.output_excel}")
-            logger.info(f"결과 디렉토리: {inspector.output_dir}")
-            if not inspector.inspection_only:
-                logger.info(f"백업 디렉토리: {inspector.backup_dir}")
-        else:
-            logger.info("처리된 결과가 없어 파일을 저장하지 않았습니다.")
 
     except NetworkInspectorError as e:
         logger.exception(f"애플리케이션 오류 발생: {e}")

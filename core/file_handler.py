@@ -38,7 +38,11 @@ def read_excel_file(filepath: str, password: str = None) -> pd.DataFrame:
         logger.error(f"엑셀 파일 읽기 실패: {filepath}, 오류: {e}")
         raise
 
-def save_results_to_excel(results: list, output_filepath: str):
+def save_results_to_excel(
+    results: list,
+    output_filepath: str,
+    column_order: list[str] | None = None
+):
     """결과를 엑셀 파일에 저장하고, 실패한 항목에 서식을 적용합니다."""
     try:
         logger.info(f"결과 저장 시작: {output_filepath}")
@@ -69,9 +73,20 @@ def save_results_to_excel(results: list, output_filepath: str):
 
         df = pd.DataFrame(processed_results)
         
-        cols = ['ip', 'vendor', 'os', '접속 상태', '오류 메시지']
-        other_cols = [col for col in df.columns if col not in cols]
-        df = df[cols + other_cols]
+        base_cols = ['ip', 'vendor', 'os', '접속 상태', '오류 메시지']
+        if column_order:
+            ordered_inspection_cols = [
+                col for col in column_order
+                if col in df.columns and col not in base_cols
+            ]
+            remaining_cols = [
+                col for col in df.columns
+                if col not in base_cols and col not in ordered_inspection_cols
+            ]
+            df = df[base_cols + ordered_inspection_cols + remaining_cols]
+        else:
+            other_cols = [col for col in df.columns if col not in base_cols]
+            df = df[base_cols + other_cols]
 
         with pd.ExcelWriter(output_filepath, engine='openpyxl') as writer:
             df.to_excel(writer, index=False, sheet_name='Inspection Results')
