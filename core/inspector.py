@@ -22,11 +22,13 @@ from vendors import (
 )
 
 class NetworkInspector:
-    def __init__(self, output_excel: str, backup_only: bool = False, inspection_only: bool = False):
+    def __init__(self, output_excel: str, backup_only: bool = False, inspection_only: bool = False, run_timestamp: str | None = None):
         # 출력 파일명에 타임스탬프 추가
         file_name, file_ext = os.path.splitext(output_excel)
-        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-        self.output_excel = f"{file_name}_{timestamp}{file_ext}"
+        timestamp = run_timestamp or datetime.now().strftime('%Y%m%d_%H%M%S')
+        self.output_dir = "results"
+        os.makedirs(self.output_dir, exist_ok=True)
+        self.output_excel = os.path.join(self.output_dir, f"{file_name}_{timestamp}{file_ext}")
         self.max_retries = 3  # 최대 재시도 횟수
         self.timeout = 10  # 연결 타임아웃 (초)
         # 공통 로깅 설정 사용 (root 로거 기반)
@@ -461,6 +463,15 @@ class NetworkInspector:
     def load_devices(self, devices: List[Dict]):
         self.devices = devices
 
+    def _format_progress_bar(self, completed: int, total: int, width: int = 24) -> str:
+        """진행률 표시를 ASCII 바 형태로 생성합니다."""
+        if total <= 0:
+            return f"[{'-' * width}] 0/0 (0%)"
+        filled = int(width * completed / total)
+        bar = "#" * filled + "-" * (width - filled)
+        percent = int((completed / total) * 100)
+        return f"[{bar}] {completed}/{total} ({percent}%)"
+
     def inspect_devices(self, backup_only: bool = False):
         """네트워크 장비를 점검하고 결과를 저장합니다."""
         if backup_only:
@@ -482,15 +493,13 @@ class NetworkInspector:
             
             for future in as_completed(future_to_device):
                 device = future_to_device[future]
+                status_message = "성공"
                 try:
                     result = future.result()
                     with self.results_lock:
                         self.results.append(result)
-                    # 로깅 메시지 수정
-                    status_message = "성공"
                     if result.get('status') == 'error':
                         status_message = f"실패 - 오류: {result.get('error_message', '알 수 없는 오류')}"
-                    self.logger.info(f"진행 상황: {completed_devices + 1}/{total_devices} 장비 처리 완료 (IP: {device['ip']}, 상태: {status_message})")
                 except Exception as e:
                     self.logger.error(f"장비 처리 중 오류 발생: {device['ip']} - {str(e)}")
                     with self.results_lock:
@@ -501,9 +510,11 @@ class NetworkInspector:
                             'status': 'error',
                             'error_message': str(e)
                         })
+                    status_message = f"실패 - 오류: {str(e)}"
                 finally:
                     completed_devices += 1
-                    self.logger.info(f"진행 상황: {completed_devices}/{total_devices} 장비 처리 완료")
+                    progress = self._format_progress_bar(completed_devices, total_devices)
+                    self.logger.info(f"진행 상황: {progress} | IP: {device['ip']} | 상태: {status_message}")
         
         # 장비 정보 순서대로 결과 정렬
         device_order = {device['ip']: i for i, device in enumerate(self.devices)}
@@ -529,15 +540,13 @@ class NetworkInspector:
             
             for future in as_completed(future_to_device):
                 device = future_to_device[future]
+                status_message = "성공"
                 try:
                     result = future.result()
                     with self.results_lock:
                         self.results.append(result)
-                    # 로깅 메시지 수정
-                    status_message = "성공"
                     if result.get('status') == 'error':
                         status_message = f"실패 - 오류: {result.get('error_message', '알 수 없는 오류')}"
-                    self.logger.info(f"진행 상황: {completed_devices + 1}/{total_devices} 장비 처리 완료 (IP: {device['ip']}, 상태: {status_message})")
                 except Exception as e:
                     self.logger.error(f"장비 처리 중 오류 발생: {device['ip']} - {str(e)}")
                     with self.results_lock:
@@ -548,9 +557,11 @@ class NetworkInspector:
                             'status': 'error',
                             'error_message': str(e)
                         })
+                    status_message = f"실패 - 오류: {str(e)}"
                 finally:
                     completed_devices += 1
-                    self.logger.info(f"진행 상황: {completed_devices}/{total_devices} 장비 처리 완료")
+                    progress = self._format_progress_bar(completed_devices, total_devices)
+                    self.logger.info(f"진행 상황: {progress} | IP: {device['ip']} | 상태: {status_message}")
         
         # 장비 정보 순서대로 결과 정렬
         device_order = {device['ip']: i for i, device in enumerate(self.devices)}

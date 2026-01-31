@@ -16,7 +16,7 @@ def get_filepath_from_dialog() -> Optional[str]:
     if tk is None:
         logger.error("GUI 기능을 사용하려면 Tkinter 패키지가 필요합니다.")
         # Fallback to console input or raise an error
-        filepath = input("엑셀 파일의 전체 경로를 입력하세요: ")
+        filepath = input(">> 엑셀 파일의 전체 경로를 입력하세요: ")
         return filepath if filepath else None
 
     root = tk.Tk()
@@ -39,7 +39,7 @@ def get_password_from_dialog() -> Optional[str]:
     """
     if tk is None:
         logger.error("GUI 기능을 사용하려면 Tkinter 패키지가 필요합니다.")
-        password = input("암호화된 파일의 비밀번호를 입력하세요: ")
+        password = input(">> 암호화된 파일의 비밀번호를 입력하세요: ")
         return password if password else None
     
     root = tk.Tk()

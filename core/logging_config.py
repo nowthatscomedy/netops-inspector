@@ -2,12 +2,41 @@ import logging
 import os
 from datetime import datetime
 
+try:
+    from colorama import Fore, Style, init as colorama_init
+except Exception:
+    Fore = None
+    Style = None
+    colorama_init = None
+
+
+class ColorFormatter(logging.Formatter):
+    def __init__(self, fmt: str, enable_color: bool = True):
+        super().__init__(fmt)
+        self.enable_color = enable_color and Fore is not None and Style is not None
+
+    def format(self, record: logging.LogRecord) -> str:
+        original_levelname = record.levelname
+        if self.enable_color:
+            color = {
+                logging.DEBUG: Fore.CYAN,
+                logging.INFO: Fore.GREEN,
+                logging.WARNING: Fore.YELLOW,
+                logging.ERROR: Fore.RED,
+                logging.CRITICAL: Fore.RED + Style.BRIGHT,
+            }.get(record.levelno, "")
+            record.levelname = f"{color}{original_levelname}{Style.RESET_ALL}"
+        message = super().format(record)
+        record.levelname = original_levelname
+        return message
+
 
 def init_logging(run_timestamp: str | None = None,
                  log_dir: str = "logs",
                  enable_console: bool = True,
                  file_level: int = logging.DEBUG,
-                 console_level: int = logging.INFO) -> str:
+                 console_level: int = logging.INFO,
+                 enable_color: bool = True) -> str:
     """
     애플리케이션 전역 로깅을 일관되게 초기화합니다.
 
@@ -32,7 +61,8 @@ def init_logging(run_timestamp: str | None = None,
 
     root_logger.setLevel(logging.DEBUG)  # 내부 기준은 DEBUG, 핸들러에서 레벨 제어
 
-    formatter = logging.Formatter('%(asctime)s - [%(threadName)s] - %(levelname)s - %(message)s')
+    log_format = '%(asctime)s | [%(threadName)s] | %(levelname)s | %(message)s'
+    formatter = logging.Formatter(log_format)
 
     # 파일 핸들러
     file_handler = logging.FileHandler(log_file, encoding='utf-8')
@@ -42,9 +72,11 @@ def init_logging(run_timestamp: str | None = None,
 
     # 콘솔 핸들러 (옵션)
     if enable_console:
+        if colorama_init is not None:
+            colorama_init(autoreset=True)
         console_handler = logging.StreamHandler()
         console_handler.setLevel(console_level)
-        console_handler.setFormatter(formatter)
+        console_handler.setFormatter(ColorFormatter(log_format, enable_color=enable_color))
         root_logger.addHandler(console_handler)
 
     # 서드파티 라이브러리 로깅 레벨 정리 (과도한 디버그 억제)

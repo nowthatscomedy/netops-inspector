@@ -1,6 +1,7 @@
 import pandas as pd
 import io
 import logging
+import os
 from openpyxl.styles import PatternFill
 
 try:
@@ -41,6 +42,10 @@ def save_results_to_excel(results: list, output_filepath: str):
     """결과를 엑셀 파일에 저장하고, 실패한 항목에 서식을 적용합니다."""
     try:
         logger.info(f"결과 저장 시작: {output_filepath}")
+
+        output_dir = os.path.dirname(output_filepath)
+        if output_dir:
+            os.makedirs(output_dir, exist_ok=True)
         
         processed_results = []
         for res in results:
