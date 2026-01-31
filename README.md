@@ -177,8 +177,9 @@ LOG FILE : logs/network_inspector_20240101_120000.log
 ## ⚙️ 설정 파일
 
 `settings.json`은 콘솔 로그 출력 수준을 저장합니다. 파일이 없으면 기본값으로 시작하며, 메뉴에서 변경 시 자동으로 생성/갱신됩니다.
+메뉴에서는 `WARNING 이상`, `INFO 이상`처럼 임계값 형태로 표시됩니다.
 
-- `console_log_level`: `WARNING`, `INFO`, `DEBUG` 중 하나
+- `console_log_level`: `CRITICAL`, `ERROR`, `WARNING`, `INFO`, `DEBUG` 중 하나
 
 ## 📦 실행 파일 (EXE) 생성
 

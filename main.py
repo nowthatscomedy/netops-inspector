@@ -80,18 +80,25 @@ def show_action_menu() -> str | None:
 
 def select_console_log_level(current_level: str) -> str:
     """콘솔 로그 레벨 선택"""
-    options = ["경고 이상만", "기본 정보", "상세 디버그", "뒤로가기"]
-    level_map = ["WARNING", "INFO", "DEBUG"]
+    options = [
+        "CRITICAL 이상",
+        "ERROR 이상",
+        "WARNING 이상",
+        "INFO 이상",
+        "DEBUG 이상",
+        "뒤로가기",
+    ]
+    level_map = ["CRITICAL", "ERROR", "WARNING", "INFO", "DEBUG"]
     try:
         selected_index = level_map.index(current_level)
     except ValueError:
-        selected_index = 1
+        selected_index = 3
     hints = [
         f"[현재] 콘솔 로그 레벨: {current_level}",
-        "일반 사용자라면 '기본 정보'를 권장합니다.",
+        "일반 사용자라면 'INFO 이상'을 권장합니다.",
     ]
     index = select_menu("콘솔 로그 레벨 설정", options, selected_index, hints=hints)
-    if index == 3:
+    if index == 5:
         return current_level
     return level_map[index]
 
@@ -104,7 +111,7 @@ def show_settings_menu(settings: AppSettings) -> None:
         ]
         hints = [
             "설정 메뉴",
-            "로그 출력이 너무 많다면 '경고 이상만'으로 줄이세요.",
+            "로그 출력이 너무 많다면 'WARNING 이상'으로 줄이세요.",
         ]
         choice = select_menu("설정", options, hints=hints)
         if choice == 0:
