@@ -259,7 +259,13 @@ class NetworkInspector:
             self.logger.error(f"TCP 연결 테스트 실패 ({ip}:{port}): {str(e)}")
             return False
 
-    def _connect_to_device(self, device: Dict, inspection_mode: bool = True, backup_mode: bool = True) -> Tuple[Dict, Dict]:
+    def _connect_to_device(
+        self,
+        device: Dict,
+        inspection_mode: bool = True,
+        backup_mode: bool = True,
+        session_log_suffix: str | None = None
+    ) -> Tuple[Dict, Dict]:
         """장비에 연결하고 명령어를 실행합니다.
         
         Args:
@@ -270,10 +276,6 @@ class NetworkInspector:
         Returns:
             Tuple[Dict, Dict]: (장비 정보, 점검/백업 결과)
         """
-        # 쓰레드 이름을 로그 형식과 동일하게 설정
-        device_index = device.get('device_index', 'NA')
-        threading.current_thread().name = f"Thread-{device_index}"
-        
         retry_count = 0
         last_error = None
         self._print_cli_status(f"[{device['ip']}] 연결 테스트 시작 (TCP {device['port']})")
@@ -286,10 +288,10 @@ class NetworkInspector:
         self._print_cli_status(f"[{device['ip']}] TCP 연결 확인 완료")
         
         # 세션 로그 파일 생성
-        session_log_file = os.path.join(
-            self.session_log_dir,
-            f"{device['ip']}_{device['vendor']}_{device['os']}.log"
-        )
+        session_log_filename = f"{device['ip']}_{device['vendor']}_{device['os']}"
+        if session_log_suffix:
+            session_log_filename = f"{session_log_filename}_{session_log_suffix}"
+        session_log_file = os.path.join(self.session_log_dir, f"{session_log_filename}.log")
         
         while retry_count < self.max_retries:
             try:
@@ -567,7 +569,7 @@ class NetworkInspector:
             self._print_cli_status(f"장비 점검 완료 (성공 {success_count} / 실패 {fail_count})")
             
     def inspect_and_backup_devices(self):
-        """네트워크 장비를 점검하고 백업합니다(단일 작업)."""
+        """네트워크 장비를 점검하고 백업합니다(병렬 작업)."""
         self.logger.info("장비 점검 및 백업 시작")
         self._print_cli_status("장비 점검 및 백업을 시작합니다.")
         total_devices = len(self.devices)
@@ -579,8 +581,8 @@ class NetworkInspector:
         with ThreadPoolExecutor(max_workers=10) as executor:
             future_to_device = {}
             for device in self.devices:
-                # 단일 작업으로 점검과 백업을 모두 수행합니다
-                future = executor.submit(self._inspect_and_backup_device, device)
+                # 점검과 백업을 장비별로 분리하여 병렬 수행합니다
+                future = executor.submit(self._inspect_and_backup_device_parallel, device)
                 future_to_device[future] = device
             
             for future in as_completed(future_to_device):
@@ -663,8 +665,58 @@ class NetworkInspector:
             result['error_message'] = str(e)
             return result
 
-    def _inspect_device(self, device: Dict) -> Dict:
+    def _inspect_and_backup_device_parallel(self, device: Dict) -> Dict:
+        """단일 장비를 점검/백업 스레드로 병렬 수행합니다."""
+        device_index = device.get('device_index', 'NA')
+        threading.current_thread().name = f"Device-{device_index}"
+        self.logger.info(f"장비 점검 및 백업(병렬) 시작: {device['ip']}")
+        self._print_cli_status(f"[{device['ip']}] 점검+백업 병렬 시작")
+        result = {
+            'ip': device['ip'],
+            'vendor': device['vendor'],
+            'os': device['os'],
+            'status': 'success',
+            'error_message': '',
+            'inspection_results': {},
+            'backup_file': ''
+        }
+
+        try:
+            with ThreadPoolExecutor(max_workers=2) as executor:
+                inspection_future = executor.submit(self._inspect_device, device, "inspection")
+                backup_future = executor.submit(self._backup_device, device, "backup")
+                inspection_result = inspection_future.result()
+                backup_result = backup_future.result()
+
+            errors = []
+            if inspection_result.get('status') == 'error':
+                error_message = inspection_result.get('error_message', '').strip()
+                errors.append(f"점검 실패: {error_message or '알 수 없는 오류'}")
+            if backup_result.get('status') == 'error':
+                error_message = backup_result.get('error_message', '').strip()
+                errors.append(f"백업 실패: {error_message or '알 수 없는 오류'}")
+
+            if errors:
+                result['status'] = 'error'
+                result['error_message'] = " | ".join(errors)
+
+            result['inspection_results'] = inspection_result.get('inspection_results', {})
+            result['backup_file'] = backup_result.get('backup_file', '')
+
+            self.logger.info(f"장비 점검 및 백업(병렬) 완료: {device['ip']}")
+            self._print_cli_status(f"[{device['ip']}] 점검+백업 병렬 완료")
+            return result
+
+        except Exception as e:
+            self.logger.error(f"장비 점검 및 백업(병렬) 중 오류 발생: {device['ip']} - {str(e)}")
+            result['status'] = 'error'
+            result['error_message'] = str(e)
+            return result
+
+    def _inspect_device(self, device: Dict, session_log_suffix: str | None = None) -> Dict:
         """단일 장비를 점검합니다."""
+        device_index = device.get('device_index', 'NA')
+        threading.current_thread().name = f"Device-{device_index}:Inspect"
         self.logger.info(f"장비 점검 시작: {device['ip']}")
         self._print_cli_status(f"[{device['ip']}] 점검 시작")
         result = {
@@ -678,7 +730,12 @@ class NetworkInspector:
         
         try:
             # 장비 연결 및 명령어 실행 (점검만 활성화)
-            device, inspection_results = self._connect_to_device(device, inspection_mode=True, backup_mode=False)
+            device, inspection_results = self._connect_to_device(
+                device,
+                inspection_mode=True,
+                backup_mode=False,
+                session_log_suffix=session_log_suffix
+            )
             
             # 오류 확인
             if 'error' in inspection_results:
@@ -699,8 +756,10 @@ class NetworkInspector:
             result['error_message'] = str(e)
             return result
 
-    def _backup_device(self, device: Dict) -> Dict:
+    def _backup_device(self, device: Dict, session_log_suffix: str | None = None) -> Dict:
         """단일 장비를 백업합니다."""
+        device_index = device.get('device_index', 'NA')
+        threading.current_thread().name = f"Device-{device_index}:Backup"
         self.logger.info(f"장비 백업 시작: {device['ip']}")
         self._print_cli_status(f"[{device['ip']}] 백업 시작")
         result = {
@@ -714,7 +773,12 @@ class NetworkInspector:
         
         try:
             # 장비 연결 (백업만 활성화)
-            device, connection_results = self._connect_to_device(device, inspection_mode=False, backup_mode=True)
+            device, connection_results = self._connect_to_device(
+                device,
+                inspection_mode=False,
+                backup_mode=True,
+                session_log_suffix=session_log_suffix
+            )
             
             # 오류 확인
             if 'error' in connection_results:
