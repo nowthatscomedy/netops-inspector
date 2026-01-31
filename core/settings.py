@@ -5,7 +5,7 @@ from pathlib import Path
 
 @dataclass
 class AppSettings:
-    console_log_level: str = "INFO"
+    console_log_level: str = "WARNING"
 
 
 def get_settings_path() -> Path:
@@ -23,9 +23,9 @@ def load_settings() -> AppSettings:
     except Exception:
         return AppSettings()
 
-    console_log_level = data.get("console_log_level", "INFO")
+    console_log_level = data.get("console_log_level", "WARNING")
     if not isinstance(console_log_level, str) or not console_log_level:
-        console_log_level = "INFO"
+        console_log_level = "WARNING"
 
     return AppSettings(console_log_level=console_log_level.upper())
 

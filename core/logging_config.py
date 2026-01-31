@@ -35,7 +35,7 @@ def init_logging(run_timestamp: str | None = None,
                  log_dir: str = "logs",
                  enable_console: bool = True,
                  file_level: int = logging.DEBUG,
-                 console_level: int = logging.INFO,
+                 console_level: int = logging.WARNING,
                  enable_color: bool = True) -> str:
     """
     애플리케이션 전역 로깅을 일관되게 초기화합니다.
