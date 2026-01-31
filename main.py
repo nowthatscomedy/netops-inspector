@@ -76,6 +76,9 @@ def _with_banner(hints: list[str] | None) -> list[str]:
         lines.extend(line.rstrip() for line in hints)
     return lines
 
+def _is_banner_line(line: str) -> bool:
+    return line.rstrip() in BANNER
+
 def _pad(text: str, width: int, align: str = "left") -> str:
     plain_len = _text_width(text)
     if plain_len >= width:
@@ -110,7 +113,8 @@ def _print_menu_frame(title: str, hints: list[str] | None, options: list[str], s
 
     if hint_lines:
         for line in hint_lines:
-            print("| " + _pad(line, width) + " |")
+            align = "center" if _is_banner_line(line) else "left"
+            print("| " + _pad(line, width, align=align) + " |")
         print("| " + _pad("", width) + " |")
 
     control_text = _color(control_line, Fore.YELLOW) if Fore else control_line
@@ -181,7 +185,8 @@ def _print_reorder_frame(
 
     if hint_lines:
         for line in hint_lines:
-            print("| " + _pad(line, width) + " |")
+            align = "center" if _is_banner_line(line) else "left"
+            print("| " + _pad(line, width, align=align) + " |")
         print("| " + _pad("", width) + " |")
 
     control_text = _color(control_line, Fore.YELLOW) if Fore else control_line
