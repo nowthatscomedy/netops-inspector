@@ -92,6 +92,94 @@ python main.py
 - 공백/빈 행은 무시됩니다.
 - 여러 벤더/OS가 섞인 경우 경고가 표시됩니다.
 
+## 사용자 커스텀 규칙 (명령어/파싱 추가)
+
+일반 사용자가 코드 수정 없이 명령어/파싱을 확장할 수 있도록 `custom_rules.json`을 지원합니다.
+
+1) `custom_rules.example.json`을 복사해 `custom_rules.json`으로 저장  
+2) `inspection_commands`, `backup_commands`, `parsing_rules`를 필요에 맞게 수정  
+3) 장비 목록의 `vendor`, `os` 값과 동일하게 입력
+
+규칙 병합 동작:
+- 점검 명령어: 기존 목록 뒤에 **중복 없이 추가**
+- 백업 명령어: 동일 벤더/OS가 있으면 **사용자 규칙으로 덮어씀**
+- 파싱 규칙: 동일 벤더/OS/명령어가 있으면 **사용자 규칙으로 덮어씀**
+
+예시:
+```json
+{
+  "inspection_commands": {
+    "cisco": { "ios": ["show inventory"] },
+    "user-custom": { "custom-os": ["show version", "show system"] }
+  },
+  "backup_commands": {
+    "user-custom": { "custom-os": "show running-config" }
+  },
+  "parsing_rules": {
+    "cisco": {
+      "ios": {
+        "show inventory": {
+          "pattern": "NAME:\\\\s+\\\\\\\"(.*?)\\\\\\\"",
+          "output_column": "Inventory Name",
+          "first_match_only": true
+        }
+      }
+    },
+    "user-custom": {
+      "custom-os": {
+        "show version": {
+          "pattern": "Version\\\\s*[:=]\\\\s*(\\\\S+)",
+          "output_column": "Version",
+          "first_match_only": true
+        },
+        "show system": {
+          "patterns": [
+            {
+              "pattern": "Hostname\\\\s*[:=]\\\\s*(\\\\S+)",
+              "output_column": "Hostname",
+              "first_match_only": true
+            },
+            {
+              "pattern": "Uptime\\\\s*[:=]\\\\s*(.*)",
+              "output_column": "Uptime",
+              "first_match_only": true
+            }
+          ]
+        }
+      }
+    }
+  }
+}
+```
+
+정규표현식 파싱 규칙:
+- `pattern`은 기본적으로 **캡처 그룹 1**을 컬럼 값으로 사용
+- `patterns`는 여러 컬럼을 한 명령어에서 추출할 때 사용
+- `first_match_only`가 없으면 모든 매치를 `,`로 합칩니다.
+
+정규표현식 공식 문서:
+- Python 정규표현식 공식 문서: https://docs.python.org/3/library/re.html
+- 정규표현식 문법 요약(Quick Reference): https://docs.python.org/3/howto/regex.html
+
+정규표현식 이해를 돕는 간단 예시:
+- `Version\s*[:=]\s*(\S+)`
+  - `Version` 다음에 `:` 또는 `=`이 나오고, 그 뒤 공백을 건너뛴 후 **첫 번째 그룹**에 값을 캡처
+- `Hostname\s*[:=]\s*(\S+)`
+  - `Hostname: my-switch`에서 `my-switch`만 추출
+- `Uptime\s*[:=]\s*(.*)`
+  - `Uptime: 12 days, 3 hours`에서 전체 문자열을 추출
+
+자주 쓰는 정규표현식 치트시트:
+- `\s` 공백(스페이스, 탭 등)
+- `\S` 공백이 아닌 문자
+- `.*` 임의 문자 0개 이상(최대한 많이)
+- `.+` 임의 문자 1개 이상
+- `(\S+)` 캡처 그룹(파싱 결과로 저장되는 부분)
+- `^` 줄 시작, `$` 줄 끝
+
+커스텀 벤더/OS 사용 방법:
+- 엑셀 장비 목록에서 `vendor: user-custom`, `os: custom-os`처럼 입력하면 됩니다.
+
 ## 결과물
 
 - 점검 결과: `results/inspection_results_YYYYMMDD_HHMMSS.xlsx`

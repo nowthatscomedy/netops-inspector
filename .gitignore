@@ -41,6 +41,7 @@ session_logs/
 logs/
 .env
 settings.json
+custom_rules.json
 NetworkInspector.spec
 
 # Logs

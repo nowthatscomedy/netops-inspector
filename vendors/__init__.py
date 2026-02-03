@@ -1,10 +1,12 @@
 # vendors/__init__.py
 
 import os
+import json
 import importlib
 import pkgutil
 import logging
 from collections import defaultdict
+from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
@@ -77,7 +79,89 @@ def _load_vendor_modules():
         except Exception as e:
             logger.error(f"벤더 모듈 '{name}' 로드 실패: {e}")
 
+def _normalize_key(value: object) -> str:
+    if not isinstance(value, str):
+        return ""
+    return value.strip().lower()
+
+def _merge_inspection_commands(custom_commands: dict) -> None:
+    if not isinstance(custom_commands, dict):
+        return
+
+    for vendor_key, os_map in custom_commands.items():
+        vendor = _normalize_key(vendor_key)
+        if not vendor or not isinstance(os_map, dict):
+            continue
+        for os_key, commands in os_map.items():
+            os_name = _normalize_key(os_key)
+            if not os_name or not isinstance(commands, list):
+                continue
+            cleaned = [str(cmd).strip() for cmd in commands if isinstance(cmd, str) and cmd.strip()]
+            if not cleaned:
+                continue
+            existing = INSPECTION_COMMANDS.get(vendor, {}).get(os_name, [])
+            merged = list(existing)
+            for cmd in cleaned:
+                if cmd not in merged:
+                    merged.append(cmd)
+            INSPECTION_COMMANDS[vendor][os_name] = merged
+
+def _merge_backup_commands(custom_commands: dict) -> None:
+    if not isinstance(custom_commands, dict):
+        return
+
+    for vendor_key, os_map in custom_commands.items():
+        vendor = _normalize_key(vendor_key)
+        if not vendor or not isinstance(os_map, dict):
+            continue
+        for os_key, command in os_map.items():
+            os_name = _normalize_key(os_key)
+            if not os_name or not isinstance(command, str) or not command.strip():
+                continue
+            BACKUP_COMMANDS[vendor][os_name] = command.strip()
+
+def _merge_parsing_rules(custom_rules: dict) -> None:
+    if not isinstance(custom_rules, dict):
+        return
+
+    for vendor_key, os_map in custom_rules.items():
+        vendor = _normalize_key(vendor_key)
+        if not vendor or not isinstance(os_map, dict):
+            continue
+        for os_key, command_map in os_map.items():
+            os_name = _normalize_key(os_key)
+            if not os_name or not isinstance(command_map, dict):
+                continue
+            for command, rules in command_map.items():
+                if not isinstance(command, str) or not command.strip():
+                    continue
+                if not isinstance(rules, dict):
+                    continue
+                PARSING_RULES[vendor].setdefault(os_name, {})
+                PARSING_RULES[vendor][os_name][command.strip()] = rules
+
+def _load_custom_rules() -> None:
+    project_root = Path(__file__).resolve().parents[1]
+    custom_rules_path = project_root / "custom_rules.json"
+    if not custom_rules_path.exists():
+        return
+
+    try:
+        data = json.loads(custom_rules_path.read_text(encoding="utf-8"))
+    except Exception as e:
+        logger.error(f"custom_rules.json 로드 실패: {e}")
+        return
+
+    if not isinstance(data, dict):
+        logger.error("custom_rules.json 형식 오류: 최상위가 dict가 아닙니다.")
+        return
+
+    _merge_inspection_commands(data.get("inspection_commands", {}))
+    _merge_backup_commands(data.get("backup_commands", {}))
+    _merge_parsing_rules(data.get("parsing_rules", {}))
+
 _load_vendor_modules()
+_load_custom_rules()
 
 # get_custom_handler 함수는 base에서 직접 임포트하여 사용하도록 변경
 from .base import get_custom_handler
