@@ -2,6 +2,7 @@ import pandas as pd
 import io
 import logging
 import os
+from pathlib import Path
 from openpyxl.styles import PatternFill
 
 try:
@@ -10,6 +11,38 @@ except ImportError:
     msoffcrypto = None
 
 logger = logging.getLogger(__name__)
+
+def read_command_file(filepath: str) -> list[str]:
+    """명령어 파일(txt/xlsx)을 읽어 순서대로 반환합니다."""
+    path = Path(filepath)
+    suffix = path.suffix.lower()
+    commands: list[str] = []
+
+    try:
+        if suffix in (".xlsx", ".xls", ".xlsm"):
+            df = pd.read_excel(filepath, header=None)
+            if df.empty:
+                return []
+            first_col = df.iloc[:, 0].tolist()
+            for value in first_col:
+                if pd.isna(value):
+                    continue
+                line = str(value).strip()
+                if line:
+                    commands.append(line)
+        elif suffix == ".txt":
+            with open(filepath, "r", encoding="utf-8") as f:
+                for line in f:
+                    cleaned = line.strip()
+                    if cleaned:
+                        commands.append(cleaned)
+        else:
+            raise ValueError(f"지원하지 않는 파일 형식입니다: {suffix}")
+    except Exception as e:
+        logger.error(f"명령어 파일 읽기 실패: {filepath}, 오류: {e}")
+        raise
+
+    return commands
 
 def read_excel_file(filepath: str, password: str = None) -> pd.DataFrame:
     """

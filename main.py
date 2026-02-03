@@ -9,7 +9,7 @@ from datetime import datetime
 from pathlib import Path
 
 from core.inspector import NetworkInspector
-from core.file_handler import read_excel_file, save_results_to_excel
+from core.file_handler import read_excel_file, save_results_to_excel, read_command_file
 from core.validator import validate_dataframe
 from core.ui import get_password_from_dialog
 from core.custom_exceptions import NetworkInspectorError
@@ -274,6 +274,7 @@ def show_main_menu() -> str:
     settings = load_settings()
     options = [
         "작업 시작 (점검/백업 선택)",
+        "사용자 명령 파일 실행",
         f"설정 변경 (로그 출력: {settings.console_log_level})",
         "종료"
     ]
@@ -720,13 +721,31 @@ def _ask_yes_no(prompt: str, default: bool = False) -> bool:
 def get_filepath_from_cli() -> str | None:
     """CLI에서 엑셀 파일 경로 입력 받기"""
     raw_input = _input_with_tab_completion(
-        ">> 엑셀 파일 경로를 입력하세요 (예: test.xlsx 또는 C:\\Users\\PC\\Desktop\\test.xlsx): ",
+        ">> 접속 정보 엑셀 파일 경로를 입력하세요 (예: test.xlsx 또는 C:\\Users\\PC\\Desktop\\test.xlsx): ",
         (".xlsx", ".xls", ".xlsm")
     ).strip()
     if not raw_input:
         return None
 
     # 따옴표로 감싼 경로 처리
+    cleaned = raw_input.strip('"').strip("'")
+    path = Path(cleaned).expanduser()
+
+    if not path.exists():
+        logger.warning("입력한 파일을 찾을 수 없습니다: %s", path)
+        return None
+
+    return str(path)
+
+def get_command_filepath_from_cli() -> str | None:
+    """CLI에서 명령어 파일 경로 입력 받기"""
+    raw_input = _input_with_tab_completion(
+        ">> 명령어 파일 경로를 입력하세요 (예: test.txt 또는 test.xlsx): ",
+        (".txt", ".xlsx", ".xls", ".xlsm")
+    ).strip()
+    if not raw_input:
+        return None
+
     cleaned = raw_input.strip('"').strip("'")
     path = Path(cleaned).expanduser()
 
@@ -748,9 +767,95 @@ def main():
                 if menu_choice == "1":
                     break
                 if menu_choice == "2":
+                    console_level = getattr(logging, settings.console_log_level, logging.INFO)
+
+                    run_timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+                    log_file = init_logging(
+                        run_timestamp=run_timestamp,
+                        console_level=console_level,
+                        file_level=logging.DEBUG,
+                        enable_color=True
+                    )
+
+                    output_excel = "command_results.xlsx"
+                    logger.info("RUN ID   : %s", run_timestamp)
+                    logger.info("LOG FILE : %s", log_file)
+                    logger.info("-----------------------------------------")
+                    logger.info("MODE    : 사용자 명령 실행")
+
+                    filepath = get_filepath_from_cli()
+                    if not filepath:
+                        logger.warning("파일 경로가 입력되지 않았습니다. 프로그램을 종료합니다.")
+                        return
+                    logger.info("INPUT   : %s", filepath)
+
+                    try:
+                        devices_df = read_excel_file(filepath)
+                    except Exception:
+                        password = get_password_from_dialog()
+                        if not password:
+                            logger.warning("암호가 입력되지 않았습니다. 프로그램을 종료합니다.")
+                            return
+                        devices_df = read_excel_file(filepath, password=password)
+
+                    validate_dataframe(devices_df)
+                    devices = devices_df.to_dict('records')
+
+                    vendor_os_pairs = {
+                        (
+                            str(d.get("vendor", "")).strip().lower(),
+                            str(d.get("os", "")).strip().lower()
+                        )
+                        for d in devices
+                    }
+                    if len(vendor_os_pairs) > 1:
+                        if not _ask_yes_no(
+                            "다른 벤더/OS가 섞여 있습니다. 계속 진행할까요?",
+                            default=False
+                        ):
+                            logger.info("사용자 명령 실행이 취소되었습니다.")
+                            continue
+
+                    command_path = get_command_filepath_from_cli()
+                    if not command_path:
+                        logger.warning("명령어 파일 경로가 입력되지 않았습니다. 프로그램을 종료합니다.")
+                        return
+                    logger.info("COMMAND FILE : %s", command_path)
+
+                    try:
+                        commands = read_command_file(command_path)
+                    except Exception as e:
+                        logger.error("명령어 파일 읽기 실패: %s", e)
+                        return
+
+                    if not commands:
+                        logger.warning("명령어 파일에 실행할 명령이 없습니다.")
+                        return
+
+                    inspector = NetworkInspector(
+                        output_excel,
+                        inspection_only=True,
+                        run_timestamp=run_timestamp,
+                        inspection_excludes=settings.inspection_excludes
+                    )
+                    inspector.load_devices(devices)
+                    inspector.run_custom_commands(commands)
+
+                    if inspector and inspector.results:
+                        save_results_to_excel(
+                            inspector.results,
+                            inspector.output_excel
+                        )
+                        logger.info("작업이 완료되었습니다.")
+                        logger.info(f"결과 파일: {inspector.output_excel}")
+                        logger.info(f"결과 디렉토리: {inspector.output_dir}")
+                    else:
+                        logger.info("처리된 결과가 없어 파일을 저장하지 않았습니다.")
+                    return
+                if menu_choice == "3":
                     show_settings_menu(settings)
                     continue
-                if menu_choice == "3":
+                if menu_choice == "4":
                     print("프로그램을 종료합니다.")
                     return
                 print("잘못된 선택입니다. 다시 시도하세요.")

@@ -401,7 +401,8 @@ class NetworkInspector:
         device: Dict,
         inspection_mode: bool = True,
         backup_mode: bool = True,
-        session_log_suffix: str | None = None
+        session_log_suffix: str | None = None,
+        custom_commands: List[str] | None = None
     ) -> Tuple[Dict, Dict]:
         """장비에 연결하고 명령어를 실행합니다.
         
@@ -479,6 +480,19 @@ class NetworkInspector:
                                     self.logger.error(f"명령어 실행 실패 ({cmd} - {device['ip']}): {str(e)}")
                                     inspection_results[f"error_{cmd}"] = str(e)
                         
+                        # 사용자 명령어 파일 실행
+                        if custom_commands:
+                            self._print_cli_status(f"[{device['ip']}] 사용자 명령 {len(custom_commands)}개 실행 시작")
+                            for idx, cmd in enumerate(custom_commands, start=1):
+                                try:
+                                    self._print_cli_status(
+                                        f"[{device['ip']}] 사용자 명령 실행 {idx}/{len(custom_commands)}: {cmd}"
+                                    )
+                                    custom_handler.send_command(cmd)
+                                except Exception as e:
+                                    self.logger.error(f"사용자 명령 실행 실패 ({cmd} - {device['ip']}): {str(e)}")
+                                    return device, {"error": f"사용자 명령 실행 실패: {str(e)}"}
+
                         # 백업 모드일 경우에만 백업 명령어 실행
                         if backup_mode:
                             # 설정 백업
@@ -509,6 +523,8 @@ class NetworkInspector:
                         # 연결 종료
                         custom_handler.disconnect()
                         
+                        if custom_commands:
+                            inspection_results["custom_commands_executed"] = len(custom_commands)
                         return device, inspection_results
                     except Exception as e:
                         self.logger.error(f"커스텀 핸들러 실행 실패 ({device['ip']}): {str(e)}")
@@ -578,6 +594,14 @@ class NetworkInspector:
                                     output = conn.send_command(cmd, read_timeout=30)
                                     parsed = self._parse_command_output(device['vendor'], device['os'], cmd, output)
                                     inspection_results.update(parsed)
+
+                            if custom_commands:
+                                self._print_cli_status(f"[{device['ip']}] 사용자 명령 {len(custom_commands)}개 실행 시작")
+                                for idx, cmd in enumerate(custom_commands, start=1):
+                                    self._print_cli_status(
+                                        f"[{device['ip']}] 사용자 명령 실행 {idx}/{len(custom_commands)}: {cmd}"
+                                    )
+                                    conn.send_command(cmd, read_timeout=30)
                             
                             if backup_mode:
                                 backup_cmd = self._get_backup_command(device['vendor'], device['os'])
@@ -590,6 +614,8 @@ class NetworkInspector:
                                     self._print_cli_status(f"[{device['ip']}] 백업 파일 저장 완료: {backup_filename}")
                                     inspection_results["backup_file"] = backup_filename
                             
+                            if custom_commands:
+                                inspection_results["custom_commands_executed"] = len(custom_commands)
                             return device, inspection_results
                     except Exception as e:
                         last_error = e
@@ -704,6 +730,61 @@ class NetworkInspector:
         else:
             self.logger.info("장비 점검 완료")
             self._print_cli_status(f"장비 점검 완료 (성공 {success_count} / 실패 {fail_count})")
+
+    def run_custom_commands(self, commands: List[str]):
+        """사용자 명령어 목록을 장비에 순차 실행합니다."""
+        self.logger.info("사용자 명령 실행 시작")
+        self._print_cli_status("사용자 명령 실행을 시작합니다.")
+
+        total_devices = len(self.devices)
+        completed_devices = 0
+        success_count = 0
+        fail_count = 0
+        self._print_cli_status(f"총 장비 수: {total_devices}대")
+
+        with ThreadPoolExecutor(max_workers=10) as executor:
+            future_to_device = {}
+            for device in self.devices:
+                future = executor.submit(self._run_custom_commands_device, device, commands)
+                future_to_device[future] = device
+
+            for future in as_completed(future_to_device):
+                device = future_to_device[future]
+                status_message = "성공"
+                try:
+                    result = future.result()
+                    with self.results_lock:
+                        self.results.append(result)
+                    if result.get('status') == 'error':
+                        status_message = f"실패 - 오류: {result.get('error_message', '알 수 없는 오류')}"
+                except Exception as e:
+                    self.logger.error(f"장비 처리 중 오류 발생: {device['ip']} - {str(e)}")
+                    with self.results_lock:
+                        self.results.append({
+                            'ip': device['ip'],
+                            'vendor': device['vendor'],
+                            'os': device['os'],
+                            'status': 'error',
+                            'error_message': str(e)
+                        })
+                    status_message = f"실패 - 오류: {str(e)}"
+                finally:
+                    completed_devices += 1
+                    if status_message.startswith("성공"):
+                        success_count += 1
+                    else:
+                        fail_count += 1
+                    progress = self._format_progress_bar(completed_devices, total_devices)
+                    self.logger.info(f"진행 상황: {progress} | IP: {device['ip']} | 상태: {status_message}")
+                    self._print_cli_status(
+                        f"진행: {progress} | IP: {device['ip']} | 상태: {status_message} | 성공 {success_count} / 실패 {fail_count}"
+                    )
+
+        device_order = {device['ip']: i for i, device in enumerate(self.devices)}
+        self.results.sort(key=lambda r: device_order.get(r.get('ip'), float('inf')))
+
+        self.logger.info("사용자 명령 실행 완료")
+        self._print_cli_status(f"사용자 명령 실행 완료 (성공 {success_count} / 실패 {fail_count})")
             
     def inspect_and_backup_devices(self):
         """네트워크 장비를 점검하고 백업합니다(병렬 작업)."""
@@ -889,6 +970,49 @@ class NetworkInspector:
 
         except Exception as e:
             self.logger.error(f"장비 점검 중 오류 발생: {device['ip']} - {str(e)}")
+            result['status'] = 'error'
+            result['error_message'] = str(e)
+            return result
+
+    def _run_custom_commands_device(
+        self,
+        device: Dict,
+        commands: List[str],
+        session_log_suffix: str | None = None
+    ) -> Dict:
+        """단일 장비에 사용자 명령어를 실행합니다."""
+        device_index = device.get('device_index', 'NA')
+        threading.current_thread().name = f"Device-{device_index}:Cmds"
+        self.logger.info(f"사용자 명령 실행 시작: {device['ip']}")
+        self._print_cli_status(f"[{device['ip']}] 사용자 명령 실행 시작")
+        result = {
+            'ip': device['ip'],
+            'vendor': device['vendor'],
+            'os': device['os'],
+            'status': 'success',
+            'error_message': ''
+        }
+
+        try:
+            device, command_results = self._connect_to_device(
+                device,
+                inspection_mode=False,
+                backup_mode=False,
+                session_log_suffix=session_log_suffix,
+                custom_commands=commands
+            )
+
+            if 'error' in command_results:
+                result['status'] = 'error'
+                result['error_message'] = command_results['error']
+                return result
+
+            self.logger.info(f"사용자 명령 실행 완료: {device['ip']}")
+            self._print_cli_status(f"[{device['ip']}] 사용자 명령 실행 완료")
+            return result
+
+        except Exception as e:
+            self.logger.error(f"사용자 명령 실행 중 오류 발생: {device['ip']} - {str(e)}")
             result['status'] = 'error'
             result['error_message'] = str(e)
             return result
