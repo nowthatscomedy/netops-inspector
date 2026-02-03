@@ -35,6 +35,7 @@ ENV/
 
 # Project specific
 *.xlsx
+*.txt
 backup/
 session_logs/
 logs/
