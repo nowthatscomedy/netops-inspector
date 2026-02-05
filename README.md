@@ -104,6 +104,7 @@ python main.py
 - 점검 명령어: 기존 목록 뒤에 **중복 없이 추가**
 - 백업 명령어: 동일 벤더/OS가 있으면 **사용자 규칙으로 덮어씀**
 - 파싱 규칙: 동일 벤더/OS/명령어가 있으면 **사용자 규칙으로 덮어씀**
+- 연결 매핑: 동일 벤더/OS가 있으면 **사용자 규칙으로 덮어씀**
 
 예시:
 ```json
@@ -148,6 +149,14 @@ python main.py
         }
       }
     }
+  },
+  "connection_overrides": {
+    "user-custom": {
+      "custom-os": {
+        "default": "cisco_ios",
+        "telnet": "cisco_ios_telnet"
+      }
+    }
   }
 }
 ```
@@ -179,6 +188,12 @@ python main.py
 
 커스텀 벤더/OS 사용 방법:
 - 엑셀 장비 목록에서 `vendor: user-custom`, `os: custom-os`처럼 입력하면 됩니다.
+- 커스텀 벤더/OS가 Netmiko에서 인식되지 않으면 `connection_overrides`로 `device_type`을 지정하세요.
+  - `ssh`, `telnet` 키를 별도로 둘 수 있으며, 없으면 `default`/`any`를 사용합니다.
+  - 지정한 `device_type`이 Netmiko에 없으면 경고 로그가 출력됩니다.
+  - 지원 목록은 메인 메뉴의 "Netmiko device_type 목록 보기"에서 확인 가능합니다.
+- 커스텀 벤더/OS는 기본적으로 **Paramiko 공용 핸들러(SSH)**로 연결합니다.
+  - `connection_type`이 `telnet`이면 Paramiko를 사용할 수 없으므로 Netmiko 경로로 시도합니다.
 
 ## 결과물
 

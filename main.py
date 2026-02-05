@@ -276,6 +276,7 @@ def show_main_menu() -> str:
         "작업 시작 (점검/백업 선택)",
         "사용자 명령 파일 실행",
         f"설정 변경 (로그 출력: {settings.console_log_level})",
+        "Netmiko device_type 목록 보기",
         "종료"
     ]
     hints = _with_banner([
@@ -284,6 +285,25 @@ def show_main_menu() -> str:
     ])
     index = select_menu("메인 메뉴", options, hints=hints)
     return str(index + 1)
+
+def show_netmiko_device_types() -> None:
+    """Netmiko가 지원하는 device_type 목록을 출력합니다."""
+    os.system("cls")
+    print("Netmiko device_type 목록")
+    print("-" * 50)
+    try:
+        from netmiko.ssh_dispatcher import CLASS_MAPPER
+        device_types = sorted(CLASS_MAPPER.keys())
+        if not device_types:
+            print("표시할 device_type이 없습니다.")
+        else:
+            for name in device_types:
+                print(name)
+    except Exception as e:
+        print(f"device_type 목록을 가져오는 데 실패했습니다: {e}")
+    print("-" * 50)
+    print("아무 키나 누르면 돌아갑니다.")
+    msvcrt.getwch()
 
 def show_action_menu() -> str | None:
     """실행 작업 선택 메뉴"""
@@ -856,6 +876,9 @@ def main():
                     show_settings_menu(settings)
                     continue
                 if menu_choice == "4":
+                    show_netmiko_device_types()
+                    continue
+                if menu_choice == "5":
                     print("프로그램을 종료합니다.")
                     return
                 print("잘못된 선택입니다. 다시 시도하세요.")

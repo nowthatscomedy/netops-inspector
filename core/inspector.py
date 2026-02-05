@@ -19,7 +19,9 @@ from vendors import (
     BACKUP_COMMANDS,
     PARSING_RULES,
     get_custom_handler,
-    CUSTOM_PARSERS
+    CUSTOM_PARSERS,
+    CONNECTION_OVERRIDES,
+    is_custom_rule_pair
 )
 
 class NetworkInspector:
@@ -65,6 +67,15 @@ class NetworkInspector:
         self.inspection_excludes = inspection_excludes or {}
         
     
+    def _should_use_parallel_for_device(self, device: Dict) -> bool:
+        """장비별 점검/백업 동시 접속 여부를 판단합니다."""
+        vendor_key = str(device.get("vendor", "")).strip().lower()
+        os_key = str(device.get("os", "")).strip().lower()
+        if not vendor_key or not os_key:
+            return True
+        if CONNECTION_OVERRIDES.get(vendor_key, {}).get(os_key):
+            return False
+        return True
 
     def _get_device_commands(self, vendor: str, model: str) -> List[str]:
         """장비별 점검 명령어를 가져옵니다."""
@@ -442,6 +453,15 @@ class NetworkInspector:
 
                 # 커스텀 핸들러 사용 시도
                 custom_handler = get_custom_handler(device, self.timeout, session_log_file)
+                if not custom_handler and is_custom_rule_pair(device.get("vendor", ""), device.get("os", "")):
+                    if device.get("connection_type", "").lower() == "ssh":
+                        from vendors.base import GenericParamikoHandler
+                        custom_handler = GenericParamikoHandler(device, self.timeout, session_log_file)
+                    else:
+                        self.logger.warning(
+                            f"커스텀 벤더/OS는 SSH만 Paramiko 공용 핸들러를 사용합니다: "
+                            f"{device.get('vendor')} {device.get('os')} ({device.get('connection_type')})"
+                        )
                 if custom_handler:
                     self.logger.debug(f"커스텀 핸들러 사용: {device['vendor']} {device['os']}")
                     try:
@@ -545,13 +565,41 @@ class NetworkInspector:
                             return device, {"error": f"커스텀 핸들러 실행 실패: {str(e)}"}
                 else: # Netmiko
                     # 장비 타입 설정
-                    if device['connection_type'].lower() == 'telnet':
-                        device_type = f"{str(device['vendor']).lower()}_{str(device['os']).lower()}_telnet"
+                    vendor_key = str(device['vendor']).lower()
+                    os_key = str(device['os']).lower()
+                    override_map = CONNECTION_OVERRIDES.get(vendor_key, {}).get(os_key, {})
+                    override_device_type = ""
+                    if isinstance(override_map, dict):
+                        conn_key = str(device['connection_type']).lower()
+                        override_device_type = (
+                            override_map.get(conn_key)
+                            or override_map.get("default")
+                            or override_map.get("any")
+                            or ""
+                        )
+                    elif isinstance(override_map, str):
+                        override_device_type = override_map.strip()
+
+                    override_used = bool(override_device_type)
+                    if override_used:
+                        device_type = override_device_type
+                    elif device['connection_type'].lower() == 'telnet':
+                        device_type = f"{vendor_key}_{os_key}_telnet"
                     else: # ssh
-                        device_type = f"{str(device['vendor']).lower()}_{str(device['os']).lower()}"
+                        device_type = f"{vendor_key}_{os_key}"
                     
                     if device['vendor'].lower() == 'juniper':
                         device_type = 'juniper_junos'
+
+                    if override_used:
+                        try:
+                            from netmiko.ssh_dispatcher import CLASS_MAPPER
+                            if device_type not in CLASS_MAPPER:
+                                self.logger.warning(
+                                    f"Netmiko device_type 미지원 가능성: {device_type} (custom override)"
+                                )
+                        except Exception:
+                            pass
 
                     # 일반 장비 접속 (Netmiko 사용)
                     safe_device = {
@@ -582,6 +630,24 @@ class NetworkInspector:
                         with ConnectHandler(**connection_params) as conn:
                             self._print_cli_status(f"[{device['ip']}] Netmiko 연결 완료 ({device_type})")
                             conn.enable()
+                            try:
+                                if not conn.check_enable_mode():
+                                    enable_secret = safe_device.get('enable_password') or safe_device.get('password')
+                                    self.logger.warning(
+                                        f"enable 모드 미진입 감지: {device['ip']} ({device_type})"
+                                    )
+                                    if enable_secret:
+                                        output = conn.send_command_timing("enable")
+                                        if "Password" in output or "password" in output:
+                                            conn.send_command_timing(enable_secret)
+                                    if not conn.check_enable_mode():
+                                        self.logger.warning(
+                                            f"enable 모드 진입 실패: {device['ip']} ({device_type})"
+                                        )
+                            except Exception as e:
+                                self.logger.warning(
+                                    f"enable 모드 확인/재시도 실패: {device['ip']} ({device_type}) - {e}"
+                                )
                             if not (device['vendor'].lower() == 'axgate' and device['os'].lower() == 'axgate'):
                                 conn.send_command_timing('terminal length 0')
                             
@@ -800,7 +866,10 @@ class NetworkInspector:
             future_to_device = {}
             for device in self.devices:
                 # 점검과 백업을 장비별로 분리하여 병렬 수행합니다
-                future = executor.submit(self._inspect_and_backup_device_parallel, device)
+                if self._should_use_parallel_for_device(device):
+                    future = executor.submit(self._inspect_and_backup_device_parallel, device)
+                else:
+                    future = executor.submit(self._inspect_and_backup_device, device)
                 future_to_device[future] = device
             
             for future in as_completed(future_to_device):

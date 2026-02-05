@@ -50,5 +50,13 @@
         }
       }
     }
+  },
+  "connection_overrides": {
+    "user-custom": {
+      "custom-os": {
+        "default": "cisco_ios",
+        "telnet": "cisco_ios_telnet"
+      }
+    }
   }
 }

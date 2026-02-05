@@ -28,6 +28,12 @@ PARSING_RULES = defaultdict(dict)
 # 커스텀 파서 함수들을 담을 딕셔너리
 CUSTOM_PARSERS = {}
 
+# 커스텀 벤더/OS -> Netmiko device_type 매핑
+CONNECTION_OVERRIDES = defaultdict(dict)
+
+# custom_rules.json에서 정의된 벤더/OS 목록
+CUSTOM_RULE_PAIRS: set[tuple[str, str]] = set()
+
 def _load_vendor_modules():
     """
     vendors 패키지 내의 모든 모듈을 동적으로 임포트하고,
@@ -84,6 +90,10 @@ def _normalize_key(value: object) -> str:
         return ""
     return value.strip().lower()
 
+def _mark_custom_pair(vendor: str, os_name: str) -> None:
+    if vendor and os_name:
+        CUSTOM_RULE_PAIRS.add((vendor, os_name))
+
 def _merge_inspection_commands(custom_commands: dict) -> None:
     if not isinstance(custom_commands, dict):
         return
@@ -96,6 +106,7 @@ def _merge_inspection_commands(custom_commands: dict) -> None:
             os_name = _normalize_key(os_key)
             if not os_name or not isinstance(commands, list):
                 continue
+            _mark_custom_pair(vendor, os_name)
             cleaned = [str(cmd).strip() for cmd in commands if isinstance(cmd, str) and cmd.strip()]
             if not cleaned:
                 continue
@@ -118,6 +129,7 @@ def _merge_backup_commands(custom_commands: dict) -> None:
             os_name = _normalize_key(os_key)
             if not os_name or not isinstance(command, str) or not command.strip():
                 continue
+            _mark_custom_pair(vendor, os_name)
             BACKUP_COMMANDS[vendor][os_name] = command.strip()
 
 def _merge_parsing_rules(custom_rules: dict) -> None:
@@ -132,6 +144,7 @@ def _merge_parsing_rules(custom_rules: dict) -> None:
             os_name = _normalize_key(os_key)
             if not os_name or not isinstance(command_map, dict):
                 continue
+            _mark_custom_pair(vendor, os_name)
             for command, rules in command_map.items():
                 if not isinstance(command, str) or not command.strip():
                     continue
@@ -139,6 +152,47 @@ def _merge_parsing_rules(custom_rules: dict) -> None:
                     continue
                 PARSING_RULES[vendor].setdefault(os_name, {})
                 PARSING_RULES[vendor][os_name][command.strip()] = rules
+
+def _normalize_device_type(value: object) -> str:
+    if not isinstance(value, str):
+        return ""
+    return value.strip()
+
+def _merge_connection_overrides(custom_rules: dict) -> None:
+    if not isinstance(custom_rules, dict):
+        return
+
+    for vendor_key, os_map in custom_rules.items():
+        vendor = _normalize_key(vendor_key)
+        if not vendor or not isinstance(os_map, dict):
+            continue
+        for os_key, override in os_map.items():
+            os_name = _normalize_key(os_key)
+            if not os_name:
+                continue
+            _mark_custom_pair(vendor, os_name)
+
+            if isinstance(override, str):
+                device_type = _normalize_device_type(override)
+                if not device_type:
+                    continue
+                CONNECTION_OVERRIDES[vendor][os_name] = {"default": device_type}
+                continue
+
+            if not isinstance(override, dict):
+                continue
+
+            mapped: dict[str, str] = {}
+            for conn_key, device_type in override.items():
+                conn = _normalize_key(conn_key)
+                if conn not in {"ssh", "telnet", "default", "any"}:
+                    continue
+                normalized_device_type = _normalize_device_type(device_type)
+                if normalized_device_type:
+                    mapped[conn] = normalized_device_type
+
+            if mapped:
+                CONNECTION_OVERRIDES[vendor][os_name] = mapped
 
 def _load_custom_rules() -> None:
     project_root = Path(__file__).resolve().parents[1]
@@ -159,6 +213,14 @@ def _load_custom_rules() -> None:
     _merge_inspection_commands(data.get("inspection_commands", {}))
     _merge_backup_commands(data.get("backup_commands", {}))
     _merge_parsing_rules(data.get("parsing_rules", {}))
+    _merge_connection_overrides(data.get("connection_overrides", {}))
+
+def is_custom_rule_pair(vendor: str, os_name: str) -> bool:
+    vendor_key = _normalize_key(vendor)
+    os_key = _normalize_key(os_name)
+    if not vendor_key or not os_key:
+        return False
+    return (vendor_key, os_key) in CUSTOM_RULE_PAIRS
 
 _load_vendor_modules()
 _load_custom_rules()
@@ -172,6 +234,9 @@ __all__ = [
     'BACKUP_COMMANDS',
     'PARSING_RULES',
     'CUSTOM_PARSERS',
+    'CONNECTION_OVERRIDES',
+    'CUSTOM_RULE_PAIRS',
+    'is_custom_rule_pair',
     'get_custom_handler',
 ]
 
@@ -211,6 +276,9 @@ __all__ = [
     'BACKUP_COMMANDS',
     'PARSING_RULES',
     'CUSTOM_PARSERS',
+    'CONNECTION_OVERRIDES',
+    'CUSTOM_RULE_PAIRS',
+    'is_custom_rule_pair',
     'get_custom_handler',
     'parsing_alcatel_hostname',
     'parsing_alcatel_temperature',

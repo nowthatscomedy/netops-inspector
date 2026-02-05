@@ -9,6 +9,9 @@ import os
 import logging
 import importlib
 import pkgutil
+import time
+import re
+import paramiko
 
 logger = logging.getLogger(__name__)
 
@@ -66,6 +69,140 @@ class CustomDeviceHandler:
             backup_dir,
             f"{self.device['ip']}_{self.device['vendor']}_{self.device['os']}.txt"
         )
+
+class GenericParamikoHandler(CustomDeviceHandler):
+    """Paramiko 기반 공용 SSH 핸들러"""
+
+    def __init__(self, device, timeout=10, session_log_file=None):
+        super().__init__(device, timeout, session_log_file)
+        self.ssh = None
+        self.channel = None
+        self.prompt = None
+        self.prompt_re = re.compile(r"[>#]\s*$")
+
+    def connect(self):
+        if self.device.get("connection_type", "").lower() != "ssh":
+            raise ValueError("GenericParamikoHandler는 SSH 연결만 지원합니다")
+
+        self.logger.debug(f"GenericParamiko SSH 접속 시작: {self.device.get('ip')}")
+        try:
+            self.ssh = paramiko.SSHClient()
+            self.ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+            self.ssh.connect(
+                hostname=self.device["ip"],
+                username=self.device["username"],
+                password=self.device["password"],
+                port=int(self.device["port"]),
+                timeout=self.timeout,
+                allow_agent=False,
+                look_for_keys=False
+            )
+            self.channel = self.ssh.invoke_shell(width=200, height=1000)
+            self.channel.settimeout(self.timeout)
+            time.sleep(1)
+            output = self._read_channel()
+            self.log_output("초기 출력", output)
+            self._update_prompt(output)
+            if not self.prompt:
+                self.channel.send("\n")
+                time.sleep(0.5)
+                output = self._read_channel()
+                self.log_output("프롬프트 재확인", output)
+                self._update_prompt(output)
+            if not self.prompt:
+                raise ConnectionError("프롬프트를 찾을 수 없습니다.")
+            return True
+        except Exception as e:
+            self.logger.error(f"GenericParamiko SSH 접속 실패: {e}")
+            if self.ssh:
+                self.ssh.close()
+            raise
+
+    def _read_channel(self):
+        output = ""
+        time.sleep(0.2)
+        if self.channel and self.channel.recv_ready():
+            while self.channel.recv_ready():
+                output += self.channel.recv(65535).decode("utf-8", "ignore")
+                time.sleep(0.1)
+        return output
+
+    def _update_prompt(self, output: str) -> None:
+        if not output:
+            return
+        for line in reversed(output.splitlines()):
+            if self.prompt_re.search(line):
+                self.prompt = line.strip()
+                return
+
+    def enable(self):
+        if not self.channel:
+            raise ConnectionError("SSH 채널이 연결되지 않았습니다.")
+
+        self.channel.send("\n")
+        time.sleep(0.5)
+        output = self._read_channel()
+        self._update_prompt(output)
+        if self.prompt and "#" in self.prompt:
+            return
+        if self.prompt and ">" in self.prompt:
+            self.channel.send("enable\n")
+            time.sleep(0.8)
+            output = self._read_channel()
+            self.log_output("enable 명령어 후", output)
+            if "Password" in output or "password" in output:
+                enable_password = self.device.get("enable_password") or self.device.get("password")
+                if enable_password:
+                    self.channel.send(str(enable_password) + "\n")
+                    time.sleep(0.8)
+                    output = self._read_channel()
+                    self.log_output("enable 비밀번호 입력 후", output)
+            self._update_prompt(output)
+
+        self.channel.send("terminal length 0\n")
+        time.sleep(0.8)
+        output = self._read_channel()
+        self.log_output("terminal length 0 명령어 후", output)
+
+    def send_command(self, command, timeout=None):
+        if not self.channel:
+            raise ConnectionError("SSH 채널이 연결되지 않았습니다.")
+        timeout = timeout or 10
+        self.log_output(f"명령어 실행: {command}", "")
+        self._read_channel()
+        self.channel.send(command + "\n")
+        full_output = ""
+        start = time.time()
+        while time.time() - start < timeout:
+            chunk = self._read_channel()
+            if chunk:
+                full_output += chunk
+                if "--More--" in chunk:
+                    self.channel.send(" ")
+                    time.sleep(0.3)
+                    continue
+            if self.prompt and full_output.strip().endswith(self.prompt):
+                break
+            if self.prompt_re.search(full_output.splitlines()[-1] if full_output else ""):
+                break
+            time.sleep(0.2)
+
+        lines = full_output.splitlines()
+        if lines and command.strip() in lines[0]:
+            lines = lines[1:]
+        if lines and self.prompt and self.prompt in lines[-1]:
+            lines = lines[:-1]
+        cleaned_output = "\n".join(lines).strip()
+        self.log_output("정리된 명령어 결과", cleaned_output)
+        return cleaned_output
+
+    def disconnect(self):
+        if self.channel:
+            self.channel.close()
+        if self.ssh:
+            self.ssh.close()
+        self.channel = None
+        self.ssh = None
 
 def _load_handlers():
     """
