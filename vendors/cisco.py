@@ -9,16 +9,50 @@ import telnetlib
 import time
 import logging
 import re
+from typing import Optional
+
+from netmiko import ConnectHandler
+from netmiko.base_connection import BaseConnection
+
 from vendors.base import CustomDeviceHandler, register_handler
 
 logger = logging.getLogger(__name__)
+
+
+def parsing_cisco_fan_status(output: str) -> str:
+    """Cisco 'show env all' 출력에서 팬 상태 파싱"""
+    fan_status = re.findall(r"FAN(?: \d+)? (?:is )?(.+)", output)
+    if not fan_status:
+        return ""
+    normalized = [status.upper() for status in fan_status]
+    if any("FAULTY" in status for status in normalized):
+        return "FAULTY"
+    if all("OK" in status for status in normalized if "NOT PRESENT" not in status):
+        return "OK"
+    return "UNKNOWN"
+
+
+def parsing_cisco_temperature(output: str) -> str:
+    """Cisco 'show env all' 출력에서 온도 파싱"""
+    match = re.search(r"TEMPERATURE is (.+)", output, re.IGNORECASE)
+    return match.group(1).strip() if match else ""
+
+
+def parsing_cisco_hostname(output: str) -> str:
+    """Cisco running-config 출력에서 호스트네임 파싱"""
+    match = re.search(r'hostname\s+"?(\S+)"?', output)
+    return match.group(1) if match else ""
+
 
 # Cisco 장비 점검 명령어 정의
 CISCO_INSPECTION_COMMANDS = {
     'cisco': {
         'ios': [
-            'show version',
-            'show running-config'
+            'show running-config',
+            'show env all',
+            'show version | include uptime',
+            'show process cpu | include CPU utilization',
+            'show process memory | include Processor Pool'
         ],
         'ios-xe': [
             'show version',
@@ -44,29 +78,36 @@ CISCO_BACKUP_COMMANDS = {
 CISCO_PARSING_RULES = {
     'cisco': {
         'ios': {
-            'show version': {
+            'show running-config': {
+                'custom_parser': 'parsing_cisco_hostname',
+                'output_column': 'Hostname'
+            },
+            'show env all': {
                 'patterns': [
                     {
-                        'pattern': r'(?:Cisco IOS Software|IOS \(tm\)).*?Version\s+([^\s,]+)',
-                        'output_column': 'Version',
-                        'first_match_only': True
+                        'custom_parser': 'parsing_cisco_fan_status',
+                        'output_column': 'Fan Status'
                     },
                     {
-                        'pattern': r'([^\s]+) uptime is (.+)',
-                        'output_columns': ['Hostname', 'Uptime'],
-                        'first_match_only': True
-                    },
-                    {
-                        'pattern': r'(?:cisco|Cisco)\s+([^\s(]+).*\s+with\s+',
-                        'output_column': 'Model',
-                        'first_match_only': True
-                    },
-                    {
-                        'pattern': r'Processor board ID\s+(\S+)',
-                        'output_column': 'Serial Number',
-                        'first_match_only': True
+                        'custom_parser': 'parsing_cisco_temperature',
+                        'output_column': 'System Temperature'
                     }
                 ]
+            },
+            'show version | include uptime': {
+                'pattern': r'uptime is (.+)',
+                'output_column': 'Uptime',
+                'first_match_only': True
+            },
+            'show process cpu | include CPU utilization': {
+                'pattern': r'CPU utilization for five seconds:\s+(\d+)%/\d+%;',
+                'output_column': 'CPU Usage %',
+                'first_match_only': True
+            },
+            'show process memory | include Processor Pool': {
+                'pattern': r'Used:\s*(\d+)',
+                'output_column': 'Memory Usage',
+                'first_match_only': True
             }
         },
         'legacy': {
@@ -97,6 +138,65 @@ CISCO_PARSING_RULES = {
         }
     }
 }
+
+
+@register_handler('cisco', 'ios', 'ssh')
+class CiscoIosSSHHandler(CustomDeviceHandler):
+    """Cisco IOS SSH 장비 핸들러 (Netmiko 기반)"""
+
+    def __init__(self, device, timeout: int = 30, session_log_file: Optional[str] = None):
+        super().__init__(device, timeout, session_log_file)
+        self.conn: Optional[BaseConnection] = None
+
+    def _build_params(self) -> dict:
+        enable_password = self.device.get("enable_password") or self.device.get("password")
+        params = {
+            "device_type": "cisco_ios",
+            "host": str(self.device["ip"]),
+            "username": str(self.device["username"]),
+            "password": str(self.device["password"]),
+            "port": int(self.device["port"]),
+            "secret": str(enable_password or ""),
+            "timeout": int(self.timeout),
+            "fast_cli": False,
+        }
+        if self.session_log_file:
+            params["session_log"] = str(self.session_log_file)
+        return params
+
+    def connect(self) -> bool:
+        if self.device['connection_type'].lower() != 'ssh':
+            raise ValueError("CiscoIosSSHHandler는 SSH 연결만 지원합니다")
+        try:
+            self.conn = ConnectHandler(**self._build_params())
+            self.logger.debug("Cisco IOS 접속 성공: %s", self.device.get("ip"))
+            return True
+        except Exception as exc:
+            self.logger.error("Cisco IOS SSH 접속 실패: %s", exc)
+            self.conn = None
+            raise
+
+    def enable(self) -> None:
+        if not self.conn:
+            raise ConnectionError("Netmiko 연결이 초기화되지 않았습니다.")
+        self.conn.enable()
+        output = self.conn.send_command_timing("terminal length 0")
+        self.log_output("terminal length 0 명령어 후", output)
+
+    def send_command(self, command: str, timeout: Optional[int] = None) -> str:
+        if not self.conn:
+            raise ConnectionError("Netmiko 연결이 초기화되지 않았습니다.")
+        read_timeout = int(timeout or 30)
+        self.log_output(f"명령어 실행: {command}", "")
+        output = self.conn.send_command(command, read_timeout=read_timeout, strip_command=True, strip_prompt=True)
+        self.log_output("정리된 명령어 결과", output)
+        return output.strip()
+
+    def disconnect(self) -> None:
+        if self.conn:
+            self.conn.disconnect()
+        self.conn = None
+
 
 @register_handler('cisco', 'legacy', 'telnet')
 class CiscoLegacyTelnetHandler(CustomDeviceHandler):
