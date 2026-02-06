@@ -71,14 +71,41 @@ class CustomDeviceHandler:
         )
 
 class GenericParamikoHandler(CustomDeviceHandler):
-    """Paramiko 기반 공용 SSH 핸들러"""
+    """Paramiko 기반 공용 SSH 핸들러 (handler_overrides 설정 지원)"""
 
-    def __init__(self, device, timeout=10, session_log_file=None):
+    # handler_overrides에서 사용 가능한 기본값
+    _DEFAULTS = {
+        "enable_command": "enable",
+        "disable_paging_command": "terminal length 0",
+        "prompt_pattern": r"[>#]\s*$",
+        "initial_delay": 1.0,
+        "command_delay": 2.0,
+        "read_delay": 0.2,
+        "more_pattern": "--More--",
+        "more_response": " ",
+        "shell_width": 200,
+        "shell_height": 1000,
+        "skip_enable": False,
+    }
+
+    def __init__(self, device, timeout=10, session_log_file=None, handler_config: dict | None = None):
         super().__init__(device, timeout, session_log_file)
         self.ssh = None
         self.channel = None
         self.prompt = None
-        self.prompt_re = re.compile(r"[>#]\s*$")
+
+        # handler_overrides 설정 병합 (기본값 <- 사용자 설정)
+        self._cfg = dict(self._DEFAULTS)
+        if handler_config:
+            for key, value in handler_config.items():
+                if key in self._DEFAULTS:
+                    self._cfg[key] = value
+
+        self.prompt_re = re.compile(self._cfg["prompt_pattern"])
+
+    def _get_cfg(self, key: str):
+        """설정값 조회 헬퍼"""
+        return self._cfg.get(key, self._DEFAULTS.get(key))
 
     def connect(self):
         if self.device.get("connection_type", "").lower() != "ssh":
@@ -97,9 +124,13 @@ class GenericParamikoHandler(CustomDeviceHandler):
                 allow_agent=False,
                 look_for_keys=False
             )
-            self.channel = self.ssh.invoke_shell(width=200, height=1000)
+            shell_width = int(self._get_cfg("shell_width"))
+            shell_height = int(self._get_cfg("shell_height"))
+            self.channel = self.ssh.invoke_shell(width=shell_width, height=shell_height)
             self.channel.settimeout(self.timeout)
-            time.sleep(1)
+
+            initial_delay = float(self._get_cfg("initial_delay"))
+            time.sleep(initial_delay)
             output = self._read_channel()
             self.log_output("초기 출력", output)
             self._update_prompt(output)
@@ -120,7 +151,8 @@ class GenericParamikoHandler(CustomDeviceHandler):
 
     def _read_channel(self):
         output = ""
-        time.sleep(0.2)
+        read_delay = float(self._get_cfg("read_delay"))
+        time.sleep(read_delay)
         if self.channel and self.channel.recv_ready():
             while self.channel.recv_ready():
                 output += self.channel.recv(65535).decode("utf-8", "ignore")
@@ -139,17 +171,36 @@ class GenericParamikoHandler(CustomDeviceHandler):
         if not self.channel:
             raise ConnectionError("SSH 채널이 연결되지 않았습니다.")
 
+        # skip_enable이 true면 enable 과정 전체 건너뛰기
+        if self._get_cfg("skip_enable"):
+            self.logger.debug("skip_enable 설정으로 enable 과정을 건너뜁니다.")
+            disable_paging = str(self._get_cfg("disable_paging_command")).strip()
+            if disable_paging:
+                self.channel.send(disable_paging + "\n")
+                time.sleep(0.8)
+                output = self._read_channel()
+                self.log_output(f"{disable_paging} 명령어 후", output)
+            return
+
         self.channel.send("\n")
         time.sleep(0.5)
         output = self._read_channel()
         self._update_prompt(output)
         if self.prompt and "#" in self.prompt:
+            disable_paging = str(self._get_cfg("disable_paging_command")).strip()
+            if disable_paging:
+                self.channel.send(disable_paging + "\n")
+                time.sleep(0.8)
+                output = self._read_channel()
+                self.log_output(f"{disable_paging} 명령어 후", output)
             return
-        if self.prompt and ">" in self.prompt:
-            self.channel.send("enable\n")
+
+        enable_cmd = str(self._get_cfg("enable_command")).strip()
+        if self.prompt and ">" in self.prompt and enable_cmd:
+            self.channel.send(enable_cmd + "\n")
             time.sleep(0.8)
             output = self._read_channel()
-            self.log_output("enable 명령어 후", output)
+            self.log_output(f"{enable_cmd} 명령어 후", output)
             if "Password" in output or "password" in output:
                 enable_password = self.device.get("enable_password") or self.device.get("password")
                 if enable_password:
@@ -159,10 +210,12 @@ class GenericParamikoHandler(CustomDeviceHandler):
                     self.log_output("enable 비밀번호 입력 후", output)
             self._update_prompt(output)
 
-        self.channel.send("terminal length 0\n")
-        time.sleep(0.8)
-        output = self._read_channel()
-        self.log_output("terminal length 0 명령어 후", output)
+        disable_paging = str(self._get_cfg("disable_paging_command")).strip()
+        if disable_paging:
+            self.channel.send(disable_paging + "\n")
+            time.sleep(0.8)
+            output = self._read_channel()
+            self.log_output(f"{disable_paging} 명령어 후", output)
 
     def send_command(self, command, timeout=None):
         if not self.channel:
@@ -171,21 +224,28 @@ class GenericParamikoHandler(CustomDeviceHandler):
         self.log_output(f"명령어 실행: {command}", "")
         self._read_channel()
         self.channel.send(command + "\n")
+
+        command_delay = float(self._get_cfg("command_delay"))
+        more_pattern = str(self._get_cfg("more_pattern"))
+        more_response = str(self._get_cfg("more_response"))
+        read_delay = float(self._get_cfg("read_delay"))
+
         full_output = ""
         start = time.time()
+        time.sleep(command_delay)
         while time.time() - start < timeout:
             chunk = self._read_channel()
             if chunk:
                 full_output += chunk
-                if "--More--" in chunk:
-                    self.channel.send(" ")
+                if more_pattern and more_pattern in chunk:
+                    self.channel.send(more_response)
                     time.sleep(0.3)
                     continue
             if self.prompt and full_output.strip().endswith(self.prompt):
                 break
             if self.prompt_re.search(full_output.splitlines()[-1] if full_output else ""):
                 break
-            time.sleep(0.2)
+            time.sleep(read_delay)
 
         lines = full_output.splitlines()
         if lines and command.strip() in lines[0]:

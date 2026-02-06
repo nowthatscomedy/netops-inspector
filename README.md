@@ -105,6 +105,7 @@ python main.py
 - 백업 명령어: 동일 벤더/OS가 있으면 **사용자 규칙으로 덮어씀**
 - 파싱 규칙: 동일 벤더/OS/명령어가 있으면 **사용자 규칙으로 덮어씀**
 - 연결 매핑: 동일 벤더/OS가 있으면 **사용자 규칙으로 덮어씀**
+- 핸들러 설정: 동일 벤더/OS가 있으면 **사용자 규칙으로 덮어씀**
 
 예시:
 ```json
@@ -157,6 +158,23 @@ python main.py
         "telnet": "cisco_ios_telnet"
       }
     }
+  },
+  "handler_overrides": {
+    "user-custom": {
+      "custom-os": {
+        "enable_command": "enable",
+        "disable_paging_command": "terminal length 0",
+        "prompt_pattern": "[>#]\\s*$",
+        "initial_delay": 1.0,
+        "command_delay": 2.0,
+        "read_delay": 0.2,
+        "more_pattern": "--More--",
+        "more_response": " ",
+        "shell_width": 200,
+        "shell_height": 1000,
+        "skip_enable": false
+      }
+    }
   }
 }
 ```
@@ -194,6 +212,24 @@ python main.py
   - 지원 목록은 메인 메뉴의 "Netmiko device_type 목록 보기"에서 확인 가능합니다.
 - 커스텀 벤더/OS는 기본적으로 **Paramiko 공용 핸들러(SSH)**로 연결합니다.
   - `connection_type`이 `telnet`이면 Paramiko를 사용할 수 없으므로 Netmiko 경로로 시도합니다.
+
+핸들러 동작 커스터마이징 (`handler_overrides`):
+- 커스텀 벤더/OS의 Paramiko 공용 핸들러 동작을 세부적으로 조정할 수 있습니다.
+- 필요한 항목만 지정하면 나머지는 기본값이 적용됩니다.
+
+| 키 | 설명 | 기본값 |
+| :--- | :--- | :--- |
+| `enable_command` | 특권모드 진입 명령어 | `"enable"` |
+| `disable_paging_command` | 페이지네이션 비활성화 명령어 (빈 문자열이면 실행 안함) | `"terminal length 0"` |
+| `prompt_pattern` | 프롬프트 감지 정규식 | `"[>#]\\s*$"` |
+| `initial_delay` | 접속 후 대기 시간 (초) | `1.0` |
+| `command_delay` | 명령어 전송 후 대기 시간 (초) | `2.0` |
+| `read_delay` | 채널 읽기 간격 (초) | `0.2` |
+| `more_pattern` | 페이지네이션 패턴 | `"--More--"` |
+| `more_response` | 페이지네이션 응답 문자 | `" "` |
+| `shell_width` | SSH 셸 가로 크기 | `200` |
+| `shell_height` | SSH 셸 세로 크기 | `1000` |
+| `skip_enable` | enable 과정 전체 건너뛰기 | `false` |
 
 ## 결과물
 

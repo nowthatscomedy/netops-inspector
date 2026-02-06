@@ -21,6 +21,7 @@ from vendors import (
     get_custom_handler,
     CUSTOM_PARSERS,
     CONNECTION_OVERRIDES,
+    HANDLER_OVERRIDES,
     is_custom_rule_pair
 )
 
@@ -456,7 +457,13 @@ class NetworkInspector:
                 if not custom_handler and is_custom_rule_pair(device.get("vendor", ""), device.get("os", "")):
                     if device.get("connection_type", "").lower() == "ssh":
                         from vendors.base import GenericParamikoHandler
-                        custom_handler = GenericParamikoHandler(device, self.timeout, session_log_file)
+                        vendor_key = device.get("vendor", "").strip().lower()
+                        os_key = device.get("os", "").strip().lower()
+                        handler_config = HANDLER_OVERRIDES.get(vendor_key, {}).get(os_key, {})
+                        custom_handler = GenericParamikoHandler(
+                            device, self.timeout, session_log_file,
+                            handler_config=handler_config if handler_config else None
+                        )
                     else:
                         self.logger.warning(
                             f"커스텀 벤더/OS는 SSH만 Paramiko 공용 핸들러를 사용합니다: "

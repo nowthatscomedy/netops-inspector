@@ -32,6 +32,9 @@ CUSTOM_PARSERS = {}
 # 커스텀 벤더/OS -> Netmiko device_type 매핑
 CONNECTION_OVERRIDES = defaultdict(dict)
 
+# 커스텀 벤더/OS -> 핸들러 동작 오버라이드
+HANDLER_OVERRIDES = defaultdict(dict)
+
 # custom_rules.json에서 정의된 벤더/OS 목록
 CUSTOM_RULE_PAIRS: set[tuple[str, str]] = set()
 
@@ -159,6 +162,51 @@ def _normalize_device_type(value: object) -> str:
         return ""
     return value.strip()
 
+# handler_overrides에서 허용하는 키 목록
+_HANDLER_OVERRIDE_KEYS = {
+    "handler_type",           # "paramiko" | "netmiko"  (기본: paramiko)
+    "enable_command",         # enable 명령어 (기본: "enable")
+    "disable_paging_command", # 페이지네이션 비활성화 명령어 (기본: "terminal length 0", 빈 문자열이면 비활성)
+    "prompt_pattern",         # 프롬프트 감지 정규식 (기본: "[>#]\\s*$")
+    "initial_delay",          # 접속 후 대기 시간 초 (기본: 1.0)
+    "command_delay",          # 명령어 전송 후 대기 시간 초 (기본: 2.0)
+    "read_delay",             # 채널 읽기 간격 초 (기본: 0.2)
+    "more_pattern",           # 페이지네이션 패턴 (기본: "--More--")
+    "more_response",          # 페이지네이션 응답 문자 (기본: " ")
+    "shell_width",            # invoke_shell width (기본: 200)
+    "shell_height",           # invoke_shell height (기본: 1000)
+    "skip_enable",            # enable 건너뛰기 여부 (기본: false)
+}
+
+
+def _merge_handler_overrides(custom_rules: dict) -> None:
+    if not isinstance(custom_rules, dict):
+        return
+
+    for vendor_key, os_map in custom_rules.items():
+        vendor = _normalize_key(vendor_key)
+        if not vendor or not isinstance(os_map, dict):
+            continue
+        for os_key, overrides in os_map.items():
+            os_name = _normalize_key(os_key)
+            if not os_name or not isinstance(overrides, dict):
+                continue
+            _mark_custom_pair(vendor, os_name)
+
+            cleaned: dict = {}
+            for key, value in overrides.items():
+                if key not in _HANDLER_OVERRIDE_KEYS:
+                    logger.warning(
+                        f"handler_overrides: 알 수 없는 키 '{key}' 무시 "
+                        f"(vendor={vendor}, os={os_name})"
+                    )
+                    continue
+                cleaned[key] = value
+
+            if cleaned:
+                HANDLER_OVERRIDES[vendor][os_name] = cleaned
+
+
 def _merge_connection_overrides(custom_rules: dict) -> None:
     if not isinstance(custom_rules, dict):
         return
@@ -215,6 +263,7 @@ def _load_custom_rules() -> None:
     _merge_backup_commands(data.get("backup_commands", {}))
     _merge_parsing_rules(data.get("parsing_rules", {}))
     _merge_connection_overrides(data.get("connection_overrides", {}))
+    _merge_handler_overrides(data.get("handler_overrides", {}))
 
 def is_custom_rule_pair(vendor: str, os_name: str) -> bool:
     vendor_key = _normalize_key(vendor)
@@ -236,6 +285,7 @@ __all__ = [
     'PARSING_RULES',
     'CUSTOM_PARSERS',
     'CONNECTION_OVERRIDES',
+    'HANDLER_OVERRIDES',
     'CUSTOM_RULE_PAIRS',
     'is_custom_rule_pair',
     'get_custom_handler',
@@ -278,6 +328,7 @@ __all__ = [
     'PARSING_RULES',
     'CUSTOM_PARSERS',
     'CONNECTION_OVERRIDES',
+    'HANDLER_OVERRIDES',
     'CUSTOM_RULE_PAIRS',
     'is_custom_rule_pair',
     'get_custom_handler',

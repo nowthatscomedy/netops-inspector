@@ -58,5 +58,22 @@
         "telnet": "cisco_ios_telnet"
       }
     }
+  },
+  "handler_overrides": {
+    "user-custom": {
+      "custom-os": {
+        "enable_command": "enable",
+        "disable_paging_command": "terminal length 0",
+        "prompt_pattern": "[>#]\\s*$",
+        "initial_delay": 1.0,
+        "command_delay": 2.0,
+        "read_delay": 0.2,
+        "more_pattern": "--More--",
+        "more_response": " ",
+        "shell_width": 200,
+        "shell_height": 1000,
+        "skip_enable": false
+      }
+    }
   }
 }
