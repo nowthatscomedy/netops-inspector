@@ -1,51 +1,78 @@
-# Python
+# ===== Python =====
 __pycache__/
 *.py[cod]
 *$py.class
 *.so
 .Python
-env/
+*.egg-info/
+*.egg
+.installed.cfg
+
+# Build / Distribution
 build/
-develop-eggs/
 dist/
+develop-eggs/
 downloads/
 eggs/
 .eggs/
-lib/
-lib64/
-parts/
 sdist/
 var/
 wheels/
-*.egg-info/
-.installed.cfg
-*.egg
-.cursorrules
+*.exe
+*.spec
 
 # Virtual Environment
 venv/
 ENV/
 .venv/
+env/
+lib/
+lib64/
+parts/
 
-# IDE
+# ===== IDE / Editor =====
 .idea/
 .vscode/
+.cursor/
+.cursorrules
 *.swp
 *.swo
+*~
 
-# Project specific
+# ===== Security - Credentials & Secrets =====
+.env
+.env.*
+secrets.*
+credentials.*
+
+# SSH / SSL / Certificates
+*.pem
+*.key
+*.crt
+*.p12
+*.pfx
+*.jks
+id_rsa
+id_ed25519
+
+# ===== Project Data (장비 정보, IP, 인증정보 포함 가능) =====
 *.xlsx
+*.xls
+*.csv
 *.txt
+*.db
+*.sqlite3
+settings.json
+custom_rules.json
+
+# ===== Output / Logs =====
 backup/
 session_logs/
 logs/
-.env
-settings.json
-custom_rules.json
-NetworkInspector.spec
-NetworkDeviceInspector.spec
-.tmp_NDIC/
 results/
-
-# Logs
 *.log
+
+# ===== Temporary =====
+.tmp_NDIC/
+*.tmp
+*.bak
