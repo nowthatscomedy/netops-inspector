@@ -1,4 +1,5 @@
 import logging
+from collections.abc import Callable
 from datetime import datetime
 from zipfile import BadZipFile
 
@@ -11,6 +12,7 @@ from core.inspector import NetworkInspector
 from core.file_handler import read_excel_file, save_results_to_excel, read_command_file
 from core.validator import validate_dataframe
 from core.ui import get_password_from_cli
+from core.tui_dashboard import TuiDashboard
 from core.custom_exceptions import NetworkInspectorError
 from core.logging_config import init_logging
 from core.settings import load_settings, AppSettings
@@ -55,6 +57,7 @@ def _create_inspector(
     *,
     inspection_only: bool = False,
     backup_only: bool = False,
+    status_callback: Callable[[dict[str, object]], None] | None = None,
 ) -> NetworkInspector:
     """NetworkInspector 인스턴스를 생성합니다."""
     return NetworkInspector(
@@ -66,6 +69,7 @@ def _create_inspector(
         max_retries=settings.max_retries,
         timeout=settings.timeout,
         max_workers=settings.max_workers,
+        status_callback=status_callback,
     )
 
 
@@ -179,17 +183,27 @@ def _run_custom_commands(settings: AppSettings) -> None:
         logger.warning("명령어 파일에 실행할 명령이 없습니다.")
         return
 
-    inspector = _create_inspector(
-        output_excel, run_timestamp, settings, inspection_only=True,
-    )
-    inspector.load_devices(devices)
-
     _print_run_summary("사용자 명령 실행", len(devices), filepath, settings, run_timestamp, log_file)
     if not ask_yes_no("실행할까요?", default=True):
         logger.info("사용자 명령 실행이 취소되었습니다.")
         return
 
-    inspector.run_custom_commands(commands)
+    dashboard = TuiDashboard("사용자 명령 실행", len(devices))
+    inspector = _create_inspector(
+        output_excel,
+        run_timestamp,
+        settings,
+        inspection_only=True,
+        status_callback=dashboard.handle_event,
+    )
+    inspector.load_devices(devices)
+
+    dashboard.start()
+    try:
+        inspector.run_custom_commands(commands)
+    finally:
+        dashboard.mark_completed("작업 완료 (결과 요약 확인)")
+        dashboard.stop()
 
     if inspector.results:
         save_results_to_excel(inspector.results, inspector.output_excel)
@@ -232,12 +246,14 @@ def _run_inspection_backup(settings: AppSettings) -> None:
     validate_dataframe(devices_df)
     devices = devices_df.to_dict('records')
 
+    dashboard = TuiDashboard(mode_label, len(devices))
     inspector = _create_inspector(
         output_excel,
         run_timestamp,
         settings,
         inspection_only=(choice == "1"),
         backup_only=(choice == "2"),
+        status_callback=dashboard.handle_event,
     )
     inspector.load_devices(devices)
 
@@ -259,12 +275,17 @@ def _run_inspection_backup(settings: AppSettings) -> None:
         logger.info("작업이 취소되었습니다.")
         return
 
-    if choice == "1":
-        inspector.inspect_devices(backup_only=False)
-    elif choice == "2":
-        inspector.inspect_devices(backup_only=True)
-    else:
-        inspector.inspect_and_backup_devices()
+    dashboard.start()
+    try:
+        if choice == "1":
+            inspector.inspect_devices(backup_only=False)
+        elif choice == "2":
+            inspector.inspect_devices(backup_only=True)
+        else:
+            inspector.inspect_and_backup_devices()
+    finally:
+        dashboard.mark_completed("작업 완료 (결과 요약 확인)")
+        dashboard.stop()
 
     if inspector.results:
         save_results_to_excel(

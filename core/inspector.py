@@ -33,6 +33,7 @@ class NetworkInspector:
         max_retries: int = 3,
         timeout: int = 10,
         max_workers: int = 10,
+        status_callback: Callable[[dict[str, object]], None] | None = None,
     ):
         file_name, file_ext = os.path.splitext(output_excel)
         timestamp = run_timestamp or datetime.now().strftime('%Y%m%d_%H%M%S')
@@ -62,6 +63,8 @@ class NetworkInspector:
         self.log_lock = threading.Lock()
         self.cli_lock = threading.Lock()
         self.inspection_excludes = inspection_excludes or {}
+        self.reconnect_cooldown = 0.5
+        self.status_callback = status_callback
         
     
     def _get_device_commands(self, vendor: str, model: str) -> list[str]:
@@ -428,9 +431,11 @@ class NetworkInspector:
                         )
                 if custom_handler:
                     self.logger.debug("커스텀 핸들러 사용: %s %s", device['vendor'], device['os'])
+                    handler_connected = False
                     try:
                         self._print_cli_status(f"[{device['ip']}] 커스텀 핸들러 연결 시작")
                         custom_handler.connect()
+                        handler_connected = True
                         custom_handler.enable()
                         self._print_cli_status(f"[{device['ip']}] 커스텀 핸들러 연결 완료")
                         
@@ -499,8 +504,6 @@ class NetworkInspector:
 
                         if on_phase_complete and backup_mode:
                             on_phase_complete('backup')
-
-                        custom_handler.disconnect()
                         
                         if custom_commands:
                             inspection_results["custom_commands_executed"] = len(custom_commands)
@@ -521,6 +524,17 @@ class NetworkInspector:
                             continue
                         else:
                             return device, {"error": f"커스텀 핸들러 실행 실패: {str(e)}"}
+                    finally:
+                        if handler_connected:
+                            try:
+                                custom_handler.disconnect()
+                                time.sleep(self.reconnect_cooldown)
+                            except Exception as disconnect_error:
+                                self.logger.debug(
+                                    "커스텀 핸들러 종료 중 경고 (%s): %s",
+                                    device['ip'],
+                                    disconnect_error,
+                                )
                 else:
                     vendor_key = str(device['vendor']).lower()
                     os_key = str(device['os']).lower()
@@ -675,6 +689,23 @@ class NetworkInspector:
             device['device_index'] = idx
         self.devices = devices
 
+    def get_device_profiles(self) -> list[dict[str, object]]:
+        """대시보드에 전달할 장비 프로필(IP, 벤더, OS, 명령어 수)을 반환합니다."""
+        profiles: list[dict[str, object]] = []
+        for device in self.devices:
+            vendor = str(device.get("vendor", "")).strip()
+            os_name = str(device.get("os", "")).strip()
+            cmd_count = len(self._get_device_commands(vendor, os_name))
+            has_backup = bool(self._get_backup_command(vendor, os_name))
+            profiles.append({
+                "ip": device["ip"],
+                "vendor": vendor,
+                "os": os_name,
+                "command_count": cmd_count,
+                "has_backup": has_backup,
+            })
+        return profiles
+
     def _format_progress_bar(self, completed: int, total: int, width: int = 24) -> str:
         """진행률 표시를 ASCII 바 형태로 생성합니다."""
         if total <= 0:
@@ -688,9 +719,30 @@ class NetworkInspector:
         """로그 레벨과 무관하게 CLI에 진행 상황을 출력합니다."""
         timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         thread_name = threading.current_thread().name
+        self._emit_status_event(
+            "log",
+            message=message,
+            timestamp=timestamp,
+            thread=thread_name,
+        )
+
+        if self.status_callback:
+            return
+
         with self.cli_lock:
             sys.stdout.write(f"{timestamp} [{thread_name}] {message}\n")
             sys.stdout.flush()
+
+    def _emit_status_event(self, event_type: str, **payload: object) -> None:
+        """상태 콜백으로 이벤트를 전달합니다."""
+        if not self.status_callback:
+            return
+        try:
+            event: dict[str, object] = {"type": event_type}
+            event.update(payload)
+            self.status_callback(event)
+        except Exception as e:
+            self.logger.debug("상태 콜백 전달 실패: %s", e)
 
     def _print_pipeline_progress(
         self,
@@ -755,10 +807,20 @@ class NetworkInspector:
                     status_message = f"실패 - 오류: {str(e)}"
                 finally:
                     completed_devices += 1
-                    if status_message.startswith("성공"):
+                    is_success = status_message.startswith("성공")
+                    if is_success:
                         success_count += 1
                     else:
                         fail_count += 1
+                    elapsed_sec = result.get('_elapsed_seconds', 0) if isinstance(result, dict) else 0
+                    self._emit_status_event(
+                        "device_complete",
+                        success=is_success,
+                        ip=device['ip'],
+                        vendor=device.get('vendor', ''),
+                        os=device.get('os', ''),
+                        elapsed_seconds=elapsed_sec,
+                    )
                     progress = self._format_progress_bar(completed_devices, total_devices)
                     self.logger.info("진행 상황: %s | IP: %s | 상태: %s", progress, device['ip'], status_message)
                     self._print_cli_status(
@@ -815,10 +877,20 @@ class NetworkInspector:
                     status_message = f"실패 - 오류: {str(e)}"
                 finally:
                     completed_devices += 1
-                    if status_message.startswith("성공"):
+                    is_success = status_message.startswith("성공")
+                    if is_success:
                         success_count += 1
                     else:
                         fail_count += 1
+                    elapsed_sec = result.get('_elapsed_seconds', 0) if isinstance(result, dict) else 0
+                    self._emit_status_event(
+                        "device_complete",
+                        success=is_success,
+                        ip=device['ip'],
+                        vendor=device.get('vendor', ''),
+                        os=device.get('os', ''),
+                        elapsed_seconds=elapsed_sec,
+                    )
                     progress = self._format_progress_bar(completed_devices, total_devices)
                     self.logger.info("진행 상황: %s | IP: %s | 상태: %s", progress, device['ip'], status_message)
                     self._print_cli_status(
@@ -833,7 +905,7 @@ class NetworkInspector:
         self._print_cli_status(f"사용자 명령 실행 완료 (성공 {success_count} / 실패 {fail_count})")
             
     def inspect_and_backup_devices(self):
-        """네트워크 장비를 점검하고 백업합니다(단일 SSH, 장비 간 병렬)."""
+        """네트워크 장비를 점검/백업 독립 연결로 파이프라인 실행합니다."""
         self.logger.info("장비 점검 및 백업 시작")
         self._print_cli_status("장비 점검 및 백업을 시작합니다.")
         total_devices = len(self.devices)
@@ -843,6 +915,7 @@ class NetworkInspector:
         backup_total = 0
         backup_done = 0
         counter_lock = threading.Lock()
+        combined_results: dict[str, dict] = {}
 
         def on_inspection_done(ip: str, success: bool) -> None:
             nonlocal inspection_done, backup_total
@@ -868,46 +941,125 @@ class NetworkInspector:
                     "성공" if success else "실패"
                 )
 
-        success_count = 0
-        fail_count = 0
-
-        with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
-            future_to_device = {
-                executor.submit(
-                    self._inspect_and_backup_device, device,
-                    on_inspection_done, on_backup_done
-                ): device
+        with ThreadPoolExecutor(max_workers=self.max_workers) as inspect_executor, ThreadPoolExecutor(
+            max_workers=self.max_workers
+        ) as backup_executor:
+            inspect_futures = {
+                inspect_executor.submit(self._inspect_device, device, "inspect"): device
                 for device in self.devices
             }
+            backup_futures: dict = {}
 
-            for future in as_completed(future_to_device):
-                device = future_to_device[future]
+            for future in as_completed(inspect_futures):
+                device = inspect_futures[future]
+                ip = device['ip']
                 try:
-                    result = future.result()
-                    with self.results_lock:
-                        self.results.append(result)
-                    if result.get('status') == 'error':
-                        fail_count += 1
-                    else:
-                        success_count += 1
+                    inspect_result = future.result()
                 except Exception as e:
-                    self.logger.error("장비 처리 중 오류: %s - %s", device['ip'], e)
-                    with self.results_lock:
-                        self.results.append({
-                            'ip': device['ip'],
-                            'vendor': device['vendor'],
-                            'os': device['os'],
-                            'status': 'error',
-                            'error_message': str(e)
-                        })
-                    fail_count += 1
+                    self.logger.error("점검 처리 중 오류: %s - %s", ip, e)
+                    inspect_result = {
+                        'ip': ip,
+                        'vendor': device['vendor'],
+                        'os': device['os'],
+                        'status': 'error',
+                        'error_message': str(e),
+                        'inspection_results': {},
+                    }
+
+                combined_result = {
+                    'ip': ip,
+                    'vendor': device['vendor'],
+                    'os': device['os'],
+                    'status': inspect_result.get('status', 'success'),
+                    'error_message': inspect_result.get('error_message', ''),
+                    'inspection_results': inspect_result.get('inspection_results', {}),
+                    'backup_file': '',
+                    '_inspect_elapsed': inspect_result.get('_elapsed_seconds', 0),
+                }
+                combined_results[ip] = combined_result
+
+                inspection_success = combined_result['status'] != 'error'
+                if inspection_success:
+                    on_inspection_done(ip, True)
+                    self._print_cli_status(f"[점검완료] {ip}: 백업 대기열 추가")
+                    backup_future = backup_executor.submit(self._backup_device, device, "backup")
+                    backup_futures[backup_future] = device
+                else:
+                    on_inspection_done(ip, False)
+                    self._emit_status_event(
+                        "device_complete", success=False, ip=ip,
+                        vendor=device.get('vendor', ''),
+                        os=device.get('os', ''),
+                        elapsed_seconds=inspect_result.get('_elapsed_seconds', 0),
+                    )
+
+            for future in as_completed(backup_futures):
+                device = backup_futures[future]
+                ip = device['ip']
+                try:
+                    backup_result = future.result()
+                except Exception as e:
+                    self.logger.error("백업 처리 중 오류: %s - %s", ip, e)
+                    backup_result = {
+                        'ip': ip,
+                        'status': 'error',
+                        'error_message': str(e),
+                        'backup_file': '',
+                    }
+
+                current = combined_results.get(ip)
+                if current is None:
+                    current = {
+                        'ip': ip,
+                        'vendor': device['vendor'],
+                        'os': device['os'],
+                        'status': 'success',
+                        'error_message': '',
+                        'inspection_results': {},
+                        'backup_file': '',
+                    }
+                    combined_results[ip] = current
+
+                bkup_elapsed = backup_result.get('_elapsed_seconds', 0) if isinstance(backup_result, dict) else 0
+                insp_elapsed = combined_results.get(ip, {}).get('_inspect_elapsed', 0)
+                total_elapsed = insp_elapsed + bkup_elapsed
+
+                if backup_result.get('status') == 'error':
+                    backup_error = backup_result.get('error_message', '백업 실패')
+                    current['status'] = 'error'
+                    if current.get('error_message'):
+                        current['error_message'] = f"{current['error_message']} | 백업: {backup_error}"
+                    else:
+                        current['error_message'] = f"백업: {backup_error}"
+                    on_backup_done(ip, False)
+                    self._emit_status_event(
+                        "device_complete", success=False, ip=ip,
+                        vendor=device.get('vendor', ''),
+                        os=device.get('os', ''),
+                        elapsed_seconds=total_elapsed,
+                    )
+                else:
+                    current['backup_file'] = backup_result.get('backup_file', '')
+                    on_backup_done(ip, True)
+                    self._emit_status_event(
+                        "device_complete", success=True, ip=ip,
+                        vendor=device.get('vendor', ''),
+                        os=device.get('os', ''),
+                        elapsed_seconds=total_elapsed,
+                    )
 
         with self.results_lock:
             device_order = {d['ip']: i for i, d in enumerate(self.devices)}
+            self.results = list(combined_results.values())
             self.results.sort(key=lambda r: device_order.get(r.get('ip'), float('inf')))
 
+        success_count = sum(1 for result in self.results if result.get('status') != 'error')
+        fail_count = len(self.results) - success_count
+
         self.logger.info("장비 점검 및 백업 완료")
-        self._print_cli_status(f"장비 점검 및 백업 완료 (성공 {success_count} / 실패 {fail_count})")
+        self._print_cli_status(
+            f"장비 점검 및 백업 완료 (성공 {success_count} / 실패 {fail_count})"
+        )
 
     def _inspect_and_backup_device(
         self,
@@ -988,6 +1140,7 @@ class NetworkInspector:
 
     def _inspect_device(self, device: dict, session_log_suffix: str | None = None) -> dict:
         """단일 장비를 점검합니다."""
+        _start = time.monotonic()
         device_index = device.get('device_index', 'NA')
         threading.current_thread().name = f"Device-{device_index}:Inspect"
         self.logger.info("장비 점검 시작: %s", device['ip'])
@@ -1025,6 +1178,8 @@ class NetworkInspector:
             result['status'] = 'error'
             result['error_message'] = str(e)
             return result
+        finally:
+            result['_elapsed_seconds'] = time.monotonic() - _start
 
     def _run_custom_commands_device(
         self,
@@ -1033,6 +1188,7 @@ class NetworkInspector:
         session_log_suffix: str | None = None
     ) -> dict:
         """단일 장비에 사용자 명령어를 실행합니다."""
+        _start = time.monotonic()
         device_index = device.get('device_index', 'NA')
         threading.current_thread().name = f"Device-{device_index}:Cmds"
         self.logger.info("사용자 명령 실행 시작: %s", device['ip'])
@@ -1068,9 +1224,12 @@ class NetworkInspector:
             result['status'] = 'error'
             result['error_message'] = str(e)
             return result
+        finally:
+            result['_elapsed_seconds'] = time.monotonic() - _start
 
     def _backup_device(self, device: dict, session_log_suffix: str | None = None) -> dict:
         """단일 장비를 백업합니다."""
+        _start = time.monotonic()
         device_index = device.get('device_index', 'NA')
         threading.current_thread().name = f"Device-{device_index}:Backup"
         self.logger.info("장비 백업 시작: %s", device['ip'])
@@ -1114,3 +1273,5 @@ class NetworkInspector:
             result['status'] = 'error'
             result['error_message'] = str(e)
             return result
+        finally:
+            result['_elapsed_seconds'] = time.monotonic() - _start
