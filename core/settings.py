@@ -3,6 +3,8 @@ from dataclasses import dataclass, asdict, field
 from pathlib import Path
 from typing import Dict, List
 
+import yaml
+
 
 @dataclass
 class AppSettings:
@@ -15,7 +17,7 @@ class AppSettings:
 
 def get_settings_path() -> Path:
     project_root = Path(__file__).resolve().parents[1]
-    return project_root / "settings.json"
+    return project_root / "settings.yaml"
 
 
 def _normalize_excludes(raw: object) -> Dict[str, Dict[str, List[str]]]:
@@ -51,14 +53,30 @@ def _normalize_excludes(raw: object) -> Dict[str, Dict[str, List[str]]]:
     return normalized
 
 
+def _load_settings_data(settings_path: Path) -> dict | None:
+    """YAML 우선, JSON 폴백으로 설정 데이터를 읽습니다."""
+    if settings_path.exists():
+        raw = settings_path.read_text(encoding="utf-8")
+        if settings_path.suffix in (".yaml", ".yml"):
+            return yaml.safe_load(raw)
+        return json.loads(raw)
+
+    json_fallback = settings_path.with_suffix(".json")
+    if json_fallback.exists():
+        return json.loads(json_fallback.read_text(encoding="utf-8"))
+
+    return None
+
+
 def load_settings() -> AppSettings:
     settings_path = get_settings_path()
-    if not settings_path.exists():
-        return AppSettings()
 
     try:
-        data = json.loads(settings_path.read_text(encoding="utf-8"))
+        data = _load_settings_data(settings_path)
     except Exception:
+        return AppSettings()
+
+    if data is None:
         return AppSettings()
 
     console_log_level = data.get("console_log_level", "WARNING")
@@ -91,6 +109,11 @@ def load_settings() -> AppSettings:
 def save_settings(settings: AppSettings) -> None:
     settings_path = get_settings_path()
     settings_path.write_text(
-        json.dumps(asdict(settings), ensure_ascii=True, indent=2),
-        encoding="utf-8"
+        yaml.dump(
+            asdict(settings),
+            default_flow_style=False,
+            allow_unicode=True,
+            sort_keys=False,
+        ),
+        encoding="utf-8",
     )

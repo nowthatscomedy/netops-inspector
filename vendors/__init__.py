@@ -8,6 +8,8 @@ import logging
 from collections import defaultdict
 from pathlib import Path
 
+import yaml
+
 logger = logging.getLogger(__name__)
 
 # 각 벤더 모듈에서 필요한 딕셔너리들을 임포트
@@ -35,7 +37,7 @@ CONNECTION_OVERRIDES = defaultdict(dict)
 # 커스텀 벤더/OS -> 핸들러 동작 오버라이드
 HANDLER_OVERRIDES = defaultdict(dict)
 
-# custom_rules.json에서 정의된 벤더/OS 목록
+# custom_rules에서 정의된 벤더/OS 목록
 CUSTOM_RULE_PAIRS: set[tuple[str, str]] = set()
 
 def _load_vendor_modules():
@@ -245,18 +247,28 @@ def _merge_connection_overrides(custom_rules: dict) -> None:
 
 def _load_custom_rules() -> None:
     project_root = Path(__file__).resolve().parents[1]
-    custom_rules_path = project_root / "custom_rules.json"
-    if not custom_rules_path.exists():
-        return
+    yaml_path = project_root / "custom_rules.yaml"
+    json_path = project_root / "custom_rules.json"
 
-    try:
-        data = json.loads(custom_rules_path.read_text(encoding="utf-8"))
-    except Exception as e:
-        logger.error("custom_rules.json 로드 실패: %s", e)
+    data: dict | None = None
+
+    if yaml_path.exists():
+        try:
+            data = yaml.safe_load(yaml_path.read_text(encoding="utf-8"))
+        except Exception as e:
+            logger.error("custom_rules.yaml 로드 실패: %s", e)
+            return
+    elif json_path.exists():
+        try:
+            data = json.loads(json_path.read_text(encoding="utf-8"))
+        except Exception as e:
+            logger.error("custom_rules.json 로드 실패: %s", e)
+            return
+    else:
         return
 
     if not isinstance(data, dict):
-        logger.error("custom_rules.json 형식 오류: 최상위가 dict가 아닙니다.")
+        logger.error("custom_rules 형식 오류: 최상위가 dict가 아닙니다.")
         return
 
     _merge_inspection_commands(data.get("inspection_commands", {}))

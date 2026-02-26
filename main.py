@@ -1,7 +1,11 @@
 import logging
-import sys
 from datetime import datetime
 from zipfile import BadZipFile
+
+import pandas as pd
+from rich.console import Console
+from rich.panel import Panel
+from rich.table import Table
 
 from core.inspector import NetworkInspector
 from core.file_handler import read_excel_file, save_results_to_excel, read_command_file
@@ -9,7 +13,7 @@ from core.validator import validate_dataframe
 from core.ui import get_password_from_cli
 from core.custom_exceptions import NetworkInspectorError
 from core.logging_config import init_logging
-from core.settings import load_settings
+from core.settings import load_settings, AppSettings
 from core.menu import (
     show_main_menu,
     show_action_menu,
@@ -21,249 +25,287 @@ from core.menu import (
 from core.cli_input import get_filepath_from_cli, get_command_filepath_from_cli
 
 logger = logging.getLogger(__name__)
+console = Console()
 
+
+# ---------------------------------------------------------------------------
+# 헬퍼 함수
+# ---------------------------------------------------------------------------
+
+def _read_excel_with_retry(filepath: str) -> pd.DataFrame | None:
+    """엑셀 파일을 읽습니다. 실패 시 암호 입력 후 재시도합니다."""
+    try:
+        return read_excel_file(filepath)
+    except (BadZipFile, Exception):
+        password = get_password_from_cli()
+        if not password:
+            logger.warning("암호가 입력되지 않았습니다.")
+            return None
+        try:
+            return read_excel_file(filepath, password=password)
+        except Exception as e:
+            logger.error("암호화된 엑셀 파일 읽기 실패: %s", e)
+            return None
+
+
+def _create_inspector(
+    output_excel: str,
+    run_timestamp: str,
+    settings: AppSettings,
+    *,
+    inspection_only: bool = False,
+    backup_only: bool = False,
+) -> NetworkInspector:
+    """NetworkInspector 인스턴스를 생성합니다."""
+    return NetworkInspector(
+        output_excel,
+        inspection_only=inspection_only,
+        backup_only=backup_only,
+        run_timestamp=run_timestamp,
+        inspection_excludes=settings.inspection_excludes,
+        max_retries=settings.max_retries,
+        timeout=settings.timeout,
+        max_workers=settings.max_workers,
+    )
+
+
+def _init_run(settings: AppSettings) -> tuple[str, str]:
+    """로깅을 초기화하고 (run_timestamp, log_file)을 반환합니다."""
+    console_level = getattr(logging, settings.console_log_level, logging.INFO)
+    run_timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+    log_file = init_logging(
+        run_timestamp=run_timestamp,
+        console_level=console_level,
+        file_level=logging.DEBUG,
+        enable_color=True,
+    )
+    return run_timestamp, log_file
+
+
+def _print_run_summary(
+    mode: str,
+    device_count: int,
+    filepath: str,
+    settings: AppSettings,
+    run_timestamp: str,
+    log_file: str,
+) -> None:
+    """실행 전 요약 패널을 표시합니다."""
+    table = Table(border_style="dim", expand=False, show_header=False)
+    table.add_column("항목", style="cyan")
+    table.add_column("값", style="bold")
+    table.add_row("RUN ID", run_timestamp)
+    table.add_row("모드", mode)
+    table.add_row("장비 수", f"{device_count}대")
+    table.add_row("파일", filepath)
+    table.add_row("타임아웃", f"{settings.timeout}초")
+    table.add_row("최대 재시도", f"{settings.max_retries}회")
+    table.add_row("동시 처리", f"{settings.max_workers}대")
+    table.add_row("로그 파일", log_file)
+    console.print(Panel(table, title="[bold cyan]실행 요약[/bold cyan]", border_style="green", expand=False))
+
+
+def _print_result_summary(inspector: NetworkInspector, log_file: str) -> None:
+    """작업 완료 후 결과 요약을 표시합니다."""
+    console.print()
+    if inspector.results:
+        console.print("[bold green]작업이 완료되었습니다.[/bold green]")
+        console.print(f"  결과 파일: {inspector.output_excel}")
+        if not inspector.inspection_only:
+            console.print(f"  백업 디렉토리: {inspector.backup_dir}")
+        console.print(f"  세션 로그: {inspector.session_log_dir}")
+        console.print(f"  로그 파일: {log_file}")
+    else:
+        console.print("[yellow]처리된 결과가 없어 결과 파일을 저장하지 않았습니다.[/yellow]")
+        console.print(f"  세션 로그: {inspector.session_log_dir}")
+        console.print(f"  로그 파일: {log_file}")
+
+    console.print()
+    input("Enter를 누르면 메인 메뉴로 돌아갑니다.")
+
+
+# ---------------------------------------------------------------------------
+# 사용자 명령 파일 실행
+# ---------------------------------------------------------------------------
+
+def _run_custom_commands(settings: AppSettings) -> None:
+    """사용자 명령 파일 실행 플로우"""
+    run_timestamp, log_file = _init_run(settings)
+    output_excel = "command_results.xlsx"
+
+    logger.info("RUN ID   : %s", run_timestamp)
+    logger.info("LOG FILE : %s", log_file)
+    logger.info("-----------------------------------------")
+    logger.info("MODE    : 사용자 명령 실행")
+
+    filepath = get_filepath_from_cli()
+    if not filepath:
+        logger.warning("파일 경로가 입력되지 않았습니다.")
+        return
+    logger.info("INPUT   : %s", filepath)
+
+    devices_df = _read_excel_with_retry(filepath)
+    if devices_df is None:
+        return
+
+    validate_dataframe(devices_df)
+    devices = devices_df.to_dict('records')
+
+    vendor_os_pairs = {
+        (
+            str(d.get("vendor", "")).strip().lower(),
+            str(d.get("os", "")).strip().lower(),
+        )
+        for d in devices
+    }
+    if len(vendor_os_pairs) > 1:
+        if not ask_yes_no("다른 벤더/OS가 섞여 있습니다. 계속 진행할까요?"):
+            logger.info("사용자 명령 실행이 취소되었습니다.")
+            return
+
+    command_path = get_command_filepath_from_cli()
+    if not command_path:
+        logger.warning("명령어 파일 경로가 입력되지 않았습니다.")
+        return
+    logger.info("COMMAND FILE : %s", command_path)
+
+    try:
+        commands = read_command_file(command_path)
+    except Exception as e:
+        logger.error("명령어 파일 읽기 실패: %s", e)
+        return
+
+    if not commands:
+        logger.warning("명령어 파일에 실행할 명령이 없습니다.")
+        return
+
+    inspector = _create_inspector(
+        output_excel, run_timestamp, settings, inspection_only=True,
+    )
+    inspector.load_devices(devices)
+
+    _print_run_summary("사용자 명령 실행", len(devices), filepath, settings, run_timestamp, log_file)
+    if not ask_yes_no("실행할까요?", default=True):
+        logger.info("사용자 명령 실행이 취소되었습니다.")
+        return
+
+    inspector.run_custom_commands(commands)
+
+    if inspector.results:
+        save_results_to_excel(inspector.results, inspector.output_excel)
+
+    _print_result_summary(inspector, log_file)
+
+
+# ---------------------------------------------------------------------------
+# 점검/백업 실행
+# ---------------------------------------------------------------------------
+
+def _run_inspection_backup(settings: AppSettings) -> None:
+    """점검/백업 실행 플로우"""
+    action_choice = show_action_menu()
+    if action_choice is None:
+        return
+
+    choice = action_choice
+    mode_map = {"1": "점검", "2": "백업", "3": "점검+백업"}
+    mode_label = mode_map.get(choice, choice)
+
+    run_timestamp, log_file = _init_run(settings)
+    output_excel = "inspection_results.xlsx"
+
+    logger.info("RUN ID   : %s", run_timestamp)
+    logger.info("LOG FILE : %s", log_file)
+    logger.info("-----------------------------------------")
+    logger.info("MODE    : %s", mode_label)
+
+    filepath = get_filepath_from_cli()
+    if not filepath:
+        logger.warning("파일 경로가 입력되지 않았습니다.")
+        return
+    logger.info("INPUT   : %s", filepath)
+
+    devices_df = _read_excel_with_retry(filepath)
+    if devices_df is None:
+        return
+
+    validate_dataframe(devices_df)
+    devices = devices_df.to_dict('records')
+
+    inspector = _create_inspector(
+        output_excel,
+        run_timestamp,
+        settings,
+        inspection_only=(choice == "1"),
+        backup_only=(choice == "2"),
+    )
+    inspector.load_devices(devices)
+
+    column_order = None
+    if choice in ("1", "3"):
+        if ask_yes_no("점검 결과 열 순서를 정할까요?"):
+            available_columns = inspector.get_available_inspection_columns(inspector.devices)
+            if available_columns:
+                reordered = reorder_columns_interactive(available_columns)
+                if reordered is None:
+                    logger.info("작업이 취소되었습니다.")
+                    return
+                column_order = reordered
+            else:
+                logger.info("정렬할 점검 항목이 없습니다.")
+
+    _print_run_summary(mode_label, len(devices), filepath, settings, run_timestamp, log_file)
+    if not ask_yes_no("실행할까요?", default=True):
+        logger.info("작업이 취소되었습니다.")
+        return
+
+    if choice == "1":
+        inspector.inspect_devices(backup_only=False)
+    elif choice == "2":
+        inspector.inspect_devices(backup_only=True)
+    else:
+        inspector.inspect_and_backup_devices()
+
+    if inspector.results:
+        save_results_to_excel(
+            inspector.results,
+            inspector.output_excel,
+            column_order=column_order,
+        )
+
+    _print_result_summary(inspector, log_file)
+
+
+# ---------------------------------------------------------------------------
+# 메인
+# ---------------------------------------------------------------------------
 
 def main():
     """메인 함수"""
     try:
         while True:
             settings = load_settings()
+            menu_choice = show_main_menu()
 
-            while True:
-                menu_choice = show_main_menu()
-                if menu_choice == "1":
-                    break
-                if menu_choice == "2":
-                    console_level = getattr(logging, settings.console_log_level, logging.INFO)
-
-                    run_timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-                    log_file = init_logging(
-                        run_timestamp=run_timestamp,
-                        console_level=console_level,
-                        file_level=logging.DEBUG,
-                        enable_color=True
-                    )
-
-                    output_excel = "command_results.xlsx"
-                    logger.info("RUN ID   : %s", run_timestamp)
-                    logger.info("LOG FILE : %s", log_file)
-                    logger.info("-----------------------------------------")
-                    logger.info("MODE    : 사용자 명령 실행")
-
-                    filepath = get_filepath_from_cli()
-                    if not filepath:
-                        logger.warning("파일 경로가 입력되지 않았습니다.")
-                        continue
-                    logger.info("INPUT   : %s", filepath)
-
-                    try:
-                        devices_df = read_excel_file(filepath)
-                    except (BadZipFile, Exception):
-                        password = get_password_from_cli()
-                        if not password:
-                            logger.warning("암호가 입력되지 않았습니다.")
-                            continue
-                        try:
-                            devices_df = read_excel_file(filepath, password=password)
-                        except Exception as e:
-                            logger.error("암호화된 엑셀 파일 읽기 실패: %s", e)
-                            continue
-
-                    validate_dataframe(devices_df)
-                    devices = devices_df.to_dict('records')
-
-                    vendor_os_pairs = {
-                        (
-                            str(d.get("vendor", "")).strip().lower(),
-                            str(d.get("os", "")).strip().lower()
-                        )
-                        for d in devices
-                    }
-                    if len(vendor_os_pairs) > 1:
-                        if not ask_yes_no(
-                            "다른 벤더/OS가 섞여 있습니다. 계속 진행할까요?",
-                            default=False
-                        ):
-                            logger.info("사용자 명령 실행이 취소되었습니다.")
-                            continue
-
-                    command_path = get_command_filepath_from_cli()
-                    if not command_path:
-                        logger.warning("명령어 파일 경로가 입력되지 않았습니다.")
-                        continue
-                    logger.info("COMMAND FILE : %s", command_path)
-
-                    try:
-                        commands = read_command_file(command_path)
-                    except Exception as e:
-                        logger.error("명령어 파일 읽기 실패: %s", e)
-                        continue
-
-                    if not commands:
-                        logger.warning("명령어 파일에 실행할 명령이 없습니다.")
-                        continue
-
-                    inspector = NetworkInspector(
-                        output_excel,
-                        inspection_only=True,
-                        run_timestamp=run_timestamp,
-                        inspection_excludes=settings.inspection_excludes,
-                        max_retries=settings.max_retries,
-                        timeout=settings.timeout,
-                        max_workers=settings.max_workers,
-                    )
-                    inspector.load_devices(devices)
-                    inspector.run_custom_commands(commands)
-
-                    if inspector and inspector.results:
-                        save_results_to_excel(
-                            inspector.results,
-                            inspector.output_excel
-                        )
-                        logger.info("작업이 완료되었습니다.")
-                        logger.info("결과 파일: %s", inspector.output_excel)
-                        logger.info("결과 디렉토리: %s", inspector.output_dir)
-                    else:
-                        logger.info("처리된 결과가 없어 파일을 저장하지 않았습니다.")
-                    return
-                if menu_choice == "3":
-                    show_settings_menu(settings)
-                    continue
-                if menu_choice == "4":
-                    show_netmiko_device_types()
-                    continue
-                if menu_choice == "5":
-                    print("프로그램을 종료합니다.")
-                    return
-                print("잘못된 선택입니다. 다시 시도하세요.")
-
-            while True:
-                action_choice = show_action_menu()
-                if action_choice is None:
-                    break
-                choice = action_choice
-
-                console_level = getattr(logging, settings.console_log_level, logging.INFO)
-
-                run_timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-                log_file = init_logging(
-                    run_timestamp=run_timestamp,
-                    console_level=console_level,
-                    file_level=logging.DEBUG,
-                    enable_color=True
-                )
-
-                output_excel = "inspection_results.xlsx"
-                logger.info("RUN ID   : %s", run_timestamp)
-                logger.info("LOG FILE : %s", log_file)
-                logger.info("-----------------------------------------")
-                mode_map = {"1": "점검", "2": "백업", "3": "점검+백업"}
-                if choice in mode_map:
-                    logger.info("MODE    : %s", mode_map[choice])
-
-                filepath = get_filepath_from_cli()
-                if not filepath:
-                    logger.warning("파일 경로가 입력되지 않았습니다.")
-                    continue
-                logger.info("INPUT   : %s", filepath)
-
-                try:
-                    devices_df = read_excel_file(filepath)
-                except (BadZipFile, Exception):
-                    password = get_password_from_cli()
-                    if not password:
-                        logger.warning("암호가 입력되지 않았습니다.")
-                        continue
-                    try:
-                        devices_df = read_excel_file(filepath, password=password)
-                    except Exception as e:
-                        logger.error("암호화된 엑셀 파일 읽기 실패: %s", e)
-                        continue
-
-                validate_dataframe(devices_df)
-                devices = devices_df.to_dict('records')
-
-                column_order = None
-                cancel_requested = False
-                if choice == "1":
-                    inspector = NetworkInspector(
-                        output_excel,
-                        inspection_only=True,
-                        run_timestamp=run_timestamp,
-                        inspection_excludes=settings.inspection_excludes,
-                        max_retries=settings.max_retries,
-                        timeout=settings.timeout,
-                        max_workers=settings.max_workers,
-                    )
-                elif choice == "2":
-                    inspector = NetworkInspector(
-                        output_excel,
-                        backup_only=True,
-                        run_timestamp=run_timestamp,
-                        inspection_excludes=settings.inspection_excludes,
-                        max_retries=settings.max_retries,
-                        timeout=settings.timeout,
-                        max_workers=settings.max_workers,
-                    )
-                elif choice == "3":
-                    inspector = NetworkInspector(
-                        output_excel,
-                        run_timestamp=run_timestamp,
-                        inspection_excludes=settings.inspection_excludes,
-                        max_retries=settings.max_retries,
-                        timeout=settings.timeout,
-                        max_workers=settings.max_workers,
-                    )
-                else:
-                    logger.warning("잘못된 선택입니다. 1-3 사이의 숫자를 입력하세요.")
-                    continue
-
-                inspector.load_devices(devices)
-
-                if choice in ("1", "3"):
-                    if ask_yes_no("점검 결과 열 순서를 정할까요?", default=False):
-                        available_columns = inspector.get_available_inspection_columns(inspector.devices)
-                        if available_columns:
-                            reordered = reorder_columns_interactive(available_columns)
-                            if reordered is None:
-                                cancel_requested = True
-                            else:
-                                column_order = reordered
-                        else:
-                            logger.info("정렬할 점검 항목이 없습니다.")
-
-                if cancel_requested:
-                    logger.info("작업이 취소되었습니다.")
-                    continue
-
-                if choice == "1":
-                    inspector.inspect_devices(backup_only=False)
-                elif choice == "2":
-                    inspector.inspect_devices(backup_only=True)
-                else:
-                    inspector.inspect_and_backup_devices()
-
-                if inspector and inspector.results:
-                    save_results_to_excel(
-                        inspector.results,
-                        inspector.output_excel,
-                        column_order=column_order
-                    )
-                    logger.info("작업이 완료되었습니다.")
-                    logger.info("결과 파일: %s", inspector.output_excel)
-                    logger.info("결과 디렉토리: %s", inspector.output_dir)
-                    if not inspector.inspection_only:
-                        logger.info("백업 디렉토리: %s", inspector.backup_dir)
-                else:
-                    logger.info("처리된 결과가 없어 파일을 저장하지 않았습니다.")
+            if menu_choice == "1":
+                _run_inspection_backup(settings)
+            elif menu_choice == "2":
+                _run_custom_commands(settings)
+            elif menu_choice == "3":
+                show_settings_menu(settings)
+            elif menu_choice == "4":
+                show_netmiko_device_types()
+            elif menu_choice == "5":
+                console.print("[dim]프로그램을 종료합니다.[/dim]")
                 return
 
     except KeyboardInterrupt:
-        print("\n프로그램을 종료합니다.")
+        console.print("\n[dim]프로그램을 종료합니다.[/dim]")
     except NetworkInspectorError as e:
         logger.exception("애플리케이션 오류 발생: %s", e)
     except Exception as e:
         logger.exception("예상치 못한 오류 발생: %s", e)
+
 
 if __name__ == "__main__":
     main()

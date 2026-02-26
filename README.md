@@ -33,9 +33,9 @@
 ## 빠른 시작
 
 ### 요구사항
-- Windows 환경 (CLI 메뉴 입력에 `msvcrt` 사용)
-- Python 3.8+
-- Tkinter 미설치 시 파일/암호 입력은 콘솔로 대체됩니다.
+- Windows 환경 (일부 기능에 `msvcrt` 사용)
+- Python 3.10+
+- CLI 인터페이스: `rich` (출력 포맷팅) + `InquirerPy` (대화형 프롬프트)
 
 ### 설치
 ```bash
@@ -74,14 +74,20 @@ python main.py
 ```
 
 2) 메뉴 선택  
-화살표/Enter로 메뉴를 선택합니다.
+화살표/Enter로 메뉴를 선택합니다. ESC로 뒤로 돌아갈 수 있습니다.
 
 3) 엑셀 파일 경로 입력  
-탭 자동완성을 지원하며, 암호화된 파일은 암호 입력을 요청합니다.
+Tab 자동완성을 지원하며, 암호화된 파일은 암호 입력을 요청합니다.
 
-4) (점검 포함 시) 결과 열 순서 설정  
+4) 실행 요약 확인  
+실행 전 장비 수, 모드, 설정값 등을 요약 패널로 표시하고 확인을 요청합니다.
+
+5) (점검 포함 시) 결과 열 순서 설정  
 작업 실행 전에 열 순서를 정할지 묻습니다.  
 `y`를 선택하면 점검 항목 목록에서 Enter로 이동 모드를 전환하여 순서를 변경합니다.
+
+6) 작업 완료 후 메인 메뉴로 자동 복귀  
+여러 작업을 연속으로 실행할 수 있습니다.
 
 ## 사용자 명령 파일 실행
 
@@ -94,9 +100,10 @@ python main.py
 
 ## 사용자 커스텀 규칙 (명령어/파싱 추가)
 
-일반 사용자가 코드 수정 없이 명령어/파싱을 확장할 수 있도록 `custom_rules.json`을 지원합니다.
+일반 사용자가 코드 수정 없이 명령어/파싱을 확장할 수 있도록 `custom_rules.yaml`을 지원합니다.  
+(하위 호환: `custom_rules.json`도 읽을 수 있으며, YAML 파일이 우선됩니다.)
 
-1) `custom_rules.example.json`을 복사해 `custom_rules.json`으로 저장  
+1) `custom_rules.example.yaml`을 복사해 `custom_rules.yaml`로 저장  
 2) `inspection_commands`, `backup_commands`, `parsing_rules`를 필요에 맞게 수정  
 3) 장비 목록의 `vendor`, `os` 값과 동일하게 입력
 
@@ -108,81 +115,76 @@ python main.py
 - 핸들러 설정: 동일 벤더/OS가 있으면 **사용자 규칙으로 덮어씀**
 
 예시:
-```json
-{
-  "inspection_commands": {
-    "cisco": { "ios": ["show inventory"] },
-    "user-custom": { "custom-os": ["show version", "show system"] }
-  },
-  "backup_commands": {
-    "user-custom": { "custom-os": "show running-config" }
-  },
-  "parsing_rules": {
-    "cisco": {
-      "ios": {
-        "show inventory": {
-          "pattern": "NAME:\\\\s+\\\\\\\"(.*?)\\\\\\\"",
-          "output_column": "Inventory Name",
-          "first_match_only": true
-        }
-      }
-    },
-    "user-custom": {
-      "custom-os": {
-        "show version": {
-          "pattern": "Version\\\\s*[:=]\\\\s*(\\\\S+)",
-          "output_column": "Version",
-          "first_match_only": true
-        },
-        "show system": {
-          "patterns": [
-            {
-              "pattern": "Hostname\\\\s*[:=]\\\\s*(\\\\S+)",
-              "output_column": "Hostname",
-              "first_match_only": true
-            },
-            {
-              "pattern": "Uptime\\\\s*[:=]\\\\s*(.*)",
-              "output_column": "Uptime",
-              "first_match_only": true
-            }
-          ]
-        }
-      }
-    }
-  },
-  "connection_overrides": {
-    "user-custom": {
-      "custom-os": {
-        "default": "cisco_ios",
-        "telnet": "cisco_ios_telnet"
-      }
-    }
-  },
-  "handler_overrides": {
-    "user-custom": {
-      "custom-os": {
-        "enable_command": "enable",
-        "disable_paging_command": "terminal length 0",
-        "prompt_pattern": "[>#]\\s*$",
-        "initial_delay": 1.0,
-        "command_delay": 2.0,
-        "read_delay": 0.2,
-        "more_pattern": "--More--",
-        "more_response": " ",
-        "shell_width": 200,
-        "shell_height": 1000,
-        "skip_enable": false
-      }
-    }
-  }
-}
+```yaml
+# 점검 명령어
+inspection_commands:
+  cisco:
+    ios:
+      - "show inventory"
+  user-custom:
+    custom-os:
+      - "show version"
+      - "show system"
+
+# 백업 명령어
+backup_commands:
+  user-custom:
+    custom-os: "show running-config"
+
+# 파싱 규칙 (싱글쿼트 안에서는 이중 이스케이프 불필요)
+parsing_rules:
+  cisco:
+    ios:
+      "show inventory":
+        pattern: 'NAME:\s+\"(.*?)\"'
+        output_column: Inventory Name
+        first_match_only: true
+  user-custom:
+    custom-os:
+      "show version":
+        pattern: 'Version\s*[:=]\s*(\S+)'
+        output_column: Version
+        first_match_only: true
+      "show system":
+        patterns:
+          - pattern: 'Hostname\s*[:=]\s*(\S+)'
+            output_column: Hostname
+            first_match_only: true
+          - pattern: 'Uptime\s*[:=]\s*(.*)'
+            output_column: Uptime
+            first_match_only: true
+
+# Netmiko device_type 매핑
+connection_overrides:
+  user-custom:
+    custom-os:
+      default: cisco_ios
+      telnet: cisco_ios_telnet
+
+# 핸들러 동작 커스터마이징
+handler_overrides:
+  user-custom:
+    custom-os:
+      enable_command: enable
+      disable_paging_command: "terminal length 0"
+      prompt_pattern: '[>#]\s*$'
+      initial_delay: 1.0
+      command_delay: 2.0
+      read_delay: 0.2
+      more_pattern: "--More--"
+      more_response: " "
+      shell_width: 200
+      shell_height: 1000
+      skip_enable: false
 ```
 
 정규표현식 파싱 규칙:
 - `pattern`은 기본적으로 **캡처 그룹 1**을 컬럼 값으로 사용
 - `patterns`는 여러 컬럼을 한 명령어에서 추출할 때 사용
 - `first_match_only`가 없으면 모든 매치를 `,`로 합칩니다.
+
+> **YAML 팁**: 정규식은 싱글쿼트(`'...'`)로 감싸면 이중 이스케이프가 필요 없습니다.  
+> JSON에서 `"hostname\\\\s+(\\\\S+)"`이던 패턴을 YAML에서는 `'hostname\s+(\S+)'`로 쓸 수 있습니다.
 
 정규표현식 공식 문서:
 - Python 정규표현식 공식 문서: https://docs.python.org/3/library/re.html
@@ -248,15 +250,16 @@ python main.py
 - 명령 읽기 타임아웃: 점검 30초, 백업 60초
 - 병렬 처리: 장비 최대 10대, 점검+백업 시 작업이 병렬로 실행됩니다.
 
-## 설정 (settings.json)
+## 설정 (settings.yaml)
 
-파일이 없으면 프로젝트 루트에 자동 생성됩니다.
+파일이 없으면 프로젝트 루트에 자동 생성됩니다.  
+(하위 호환: `settings.json`도 읽을 수 있으며, YAML 파일이 우선됩니다.)
 
 - `console_log_level`: `CRITICAL`, `ERROR`, `WARNING`, `INFO`, `DEBUG`
 - `inspection_excludes`: 벤더/OS/파싱 항목 단위 제외 설정  
   - 값은 `명령어` 또는 `명령어::컬럼명` 형태로 저장됩니다.
   - 설정 메뉴에서 단계별 모두 포함/제외 지원 (전체/벤더/OS), 변경 시 `y/N` 확인
-- 배너 문구는 `main.py`의 `BANNER` 리스트에서 변경합니다.
+- 배너 문구는 `core/menu.py`의 `BANNER_TEXT`에서 변경합니다.
 
 ## 프로젝트 구조
 
@@ -264,6 +267,9 @@ python main.py
 network-device-inspection-1/
 ├── main.py
 ├── requirements.txt
+├── settings.yaml
+├── custom_rules.yaml
+├── custom_rules.example.yaml
 ├── core/
 │   ├── inspector.py
 │   ├── file_handler.py
@@ -294,7 +300,7 @@ network-device-inspection-1/
 ## 로깅
 
 - 파일 로그는 항상 DEBUG 레벨로 저장됩니다.
-- 콘솔 로그 레벨은 `settings.json`의 `console_log_level`로 조정합니다.
+- 콘솔 로그 레벨은 `settings.yaml`의 `console_log_level`로 조정합니다.
 - 기본 로그 포맷: `%(asctime)s | [%(threadName)s] | %(levelname)s | %(message)s`
 
 ## EXE 빌드 (PyInstaller)
@@ -311,8 +317,11 @@ pyinstaller --onefile --name "NetworkInspector" `
   --hidden-import "vendors.piolink" `
   --hidden-import "vendors.ruckus" `
   --hidden-import "vendors.ubiquoss" `
+  --hidden-import "prompt_toolkit" `
   main.py
 ```
+
+> `InquirerPy`는 `prompt_toolkit`에 의존하므로 `--hidden-import "prompt_toolkit"`이 필요할 수 있습니다.
 
 ## 라이선스
 

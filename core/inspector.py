@@ -7,6 +7,7 @@ import socket
 import time
 import logging
 import traceback
+from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import sys
 
@@ -20,7 +21,6 @@ from vendors import (
     HANDLER_OVERRIDES,
     is_custom_rule_pair
 )
-from vendors.base import HANDLER_REGISTRY
 
 class NetworkInspector:
     def __init__(
@@ -64,19 +64,6 @@ class NetworkInspector:
         self.inspection_excludes = inspection_excludes or {}
         
     
-    def _should_use_parallel_for_device(self, device: dict) -> bool:
-        """장비별 점검/백업 동시 접속 여부를 판단합니다."""
-        vendor_key = str(device.get("vendor", "")).strip().lower()
-        os_key = str(device.get("os", "")).strip().lower()
-        if not vendor_key or not os_key:
-            return True
-        if CONNECTION_OVERRIDES.get(vendor_key, {}).get(os_key):
-            return False
-        conn_type = str(device.get("connection_type", "")).strip().lower()
-        if (vendor_key, os_key, conn_type) in HANDLER_REGISTRY or (vendor_key, '*', conn_type) in HANDLER_REGISTRY:
-            return False
-        return True
-
     def _get_device_commands(self, vendor: str, model: str) -> list[str]:
         """장비별 점검 명령어를 가져옵니다."""
         try:
@@ -396,7 +383,8 @@ class NetworkInspector:
         inspection_mode: bool = True,
         backup_mode: bool = True,
         session_log_suffix: str | None = None,
-        custom_commands: list[str] | None = None
+        custom_commands: list[str] | None = None,
+        on_phase_complete: Callable[[str], None] | None = None,
     ) -> tuple[dict, dict]:
         """장비에 연결하고 명령어를 실행합니다."""
         retry_count = 0
@@ -470,7 +458,10 @@ class NetworkInspector:
                                 except Exception as e:
                                     self.logger.error("명령어 실행 실패 (%s - %s): %s", cmd, device['ip'], e)
                                     inspection_results[f"error_{cmd}"] = str(e)
-                        
+
+                        if on_phase_complete and inspection_mode:
+                            on_phase_complete('inspection')
+
                         if custom_commands:
                             self._print_cli_status(f"[{device['ip']}] 사용자 명령 {len(custom_commands)}개 실행 시작")
                             for idx, cmd in enumerate(custom_commands, start=1):
@@ -505,7 +496,10 @@ class NetworkInspector:
                                 except Exception as e:
                                     self.logger.error("백업 실패 (%s): %s", device['ip'], e)
                                     inspection_results["backup_error"] = str(e)
-                        
+
+                        if on_phase_complete and backup_mode:
+                            on_phase_complete('backup')
+
                         custom_handler.disconnect()
                         
                         if custom_commands:
@@ -623,6 +617,9 @@ class NetworkInspector:
                                     parsed = self._parse_command_output(device['vendor'], device['os'], cmd, output)
                                     inspection_results.update(parsed)
 
+                            if on_phase_complete and inspection_mode:
+                                on_phase_complete('inspection')
+
                             if custom_commands:
                                 self._print_cli_status(f"[{device['ip']}] 사용자 명령 {len(custom_commands)}개 실행 시작")
                                 for idx, cmd in enumerate(custom_commands, start=1):
@@ -641,7 +638,10 @@ class NetworkInspector:
                                         f.write(backup_output)
                                     self._print_cli_status(f"[{device['ip']}] 백업 파일 저장 완료: {backup_filename}")
                                     inspection_results["backup_file"] = backup_filename
-                            
+
+                            if on_phase_complete and backup_mode:
+                                on_phase_complete('backup')
+
                             if custom_commands:
                                 inspection_results["custom_commands_executed"] = len(custom_commands)
                             return device, inspection_results
@@ -691,6 +691,23 @@ class NetworkInspector:
         with self.cli_lock:
             sys.stdout.write(f"{timestamp} [{thread_name}] {message}\n")
             sys.stdout.flush()
+
+    def _print_pipeline_progress(
+        self,
+        insp_done: int,
+        insp_total: int,
+        bkup_done: int,
+        bkup_total: int,
+        stage: str,
+        device_ip: str,
+        status_msg: str,
+    ) -> None:
+        """파이프라인 진행률을 점검/백업 분리하여 표시합니다."""
+        insp_bar = self._format_progress_bar(insp_done, insp_total, width=20)
+        bkup_bar = self._format_progress_bar(bkup_done, bkup_total, width=20)
+        self._print_cli_status(
+            f"점검: {insp_bar} | 백업: {bkup_bar} | [{stage}] {device_ip}: {status_msg}"
+        )
 
     def inspect_devices(self, backup_only: bool = False):
         """네트워크 장비를 점검하고 결과를 저장합니다."""
@@ -816,35 +833,65 @@ class NetworkInspector:
         self._print_cli_status(f"사용자 명령 실행 완료 (성공 {success_count} / 실패 {fail_count})")
             
     def inspect_and_backup_devices(self):
-        """네트워크 장비를 점검하고 백업합니다(병렬 작업)."""
+        """네트워크 장비를 점검하고 백업합니다(단일 SSH, 장비 간 병렬)."""
         self.logger.info("장비 점검 및 백업 시작")
         self._print_cli_status("장비 점검 및 백업을 시작합니다.")
         total_devices = len(self.devices)
-        completed_devices = 0
+        self._print_cli_status(f"총 장비 수: {total_devices}대")
+
+        inspection_done = 0
+        backup_total = 0
+        backup_done = 0
+        counter_lock = threading.Lock()
+
+        def on_inspection_done(ip: str, success: bool) -> None:
+            nonlocal inspection_done, backup_total
+            with counter_lock:
+                inspection_done += 1
+                if success:
+                    backup_total += 1
+                self._print_pipeline_progress(
+                    inspection_done, total_devices,
+                    backup_done, backup_total,
+                    "점검완료" if success else "점검실패", ip,
+                    "백업 진행 중" if success else "점검 실패"
+                )
+
+        def on_backup_done(ip: str, success: bool) -> None:
+            nonlocal backup_done
+            with counter_lock:
+                backup_done += 1
+                self._print_pipeline_progress(
+                    inspection_done, total_devices,
+                    backup_done, backup_total,
+                    "백업완료" if success else "백업실패", ip,
+                    "성공" if success else "실패"
+                )
+
         success_count = 0
         fail_count = 0
-        self._print_cli_status(f"총 장비 수: {total_devices}대")
-        
+
         with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
-            future_to_device = {}
-            for device in self.devices:
-                if self._should_use_parallel_for_device(device):
-                    future = executor.submit(self._inspect_and_backup_device_parallel, device)
-                else:
-                    future = executor.submit(self._inspect_and_backup_device, device)
-                future_to_device[future] = device
-            
+            future_to_device = {
+                executor.submit(
+                    self._inspect_and_backup_device, device,
+                    on_inspection_done, on_backup_done
+                ): device
+                for device in self.devices
+            }
+
             for future in as_completed(future_to_device):
                 device = future_to_device[future]
-                status_message = "성공"
                 try:
                     result = future.result()
                     with self.results_lock:
                         self.results.append(result)
                     if result.get('status') == 'error':
-                        status_message = f"실패 - 오류: {result.get('error_message', '알 수 없는 오류')}"
+                        fail_count += 1
+                    else:
+                        success_count += 1
                 except Exception as e:
-                    self.logger.error("장비 처리 중 오류 발생: %s - %s", device['ip'], e)
+                    self.logger.error("장비 처리 중 오류: %s - %s", device['ip'], e)
                     with self.results_lock:
                         self.results.append({
                             'ip': device['ip'],
@@ -853,32 +900,30 @@ class NetworkInspector:
                             'status': 'error',
                             'error_message': str(e)
                         })
-                    status_message = f"실패 - 오류: {str(e)}"
-                finally:
-                    completed_devices += 1
-                    if status_message.startswith("성공"):
-                        success_count += 1
-                    else:
-                        fail_count += 1
-                    progress = self._format_progress_bar(completed_devices, total_devices)
-                    self.logger.info("진행 상황: %s | IP: %s | 상태: %s", progress, device['ip'], status_message)
-                    self._print_cli_status(
-                        f"진행: {progress} | IP: {device['ip']} | 상태: {status_message} | 성공 {success_count} / 실패 {fail_count}"
-                    )
-        
+                    fail_count += 1
+
         with self.results_lock:
-            device_order = {device['ip']: i for i, device in enumerate(self.devices)}
+            device_order = {d['ip']: i for i, d in enumerate(self.devices)}
             self.results.sort(key=lambda r: device_order.get(r.get('ip'), float('inf')))
-        
+
         self.logger.info("장비 점검 및 백업 완료")
         self._print_cli_status(f"장비 점검 및 백업 완료 (성공 {success_count} / 실패 {fail_count})")
 
-    def _inspect_and_backup_device(self, device: dict) -> dict:
-        """단일 장비를 점검하고 백업합니다."""
-        self.logger.info("장비 점검 및 백업 시작: %s", device['ip'])
-        self._print_cli_status(f"[{device['ip']}] 점검+백업 시작")
-        result = {
-            'ip': device['ip'],
+    def _inspect_and_backup_device(
+        self,
+        device: dict,
+        on_inspection_done: Callable[[str, bool], None] | None = None,
+        on_backup_done: Callable[[str, bool], None] | None = None,
+    ) -> dict:
+        """단일 SSH 연결로 점검 후 백업을 수행합니다."""
+        device_index = device.get('device_index', 'NA')
+        threading.current_thread().name = f"Device-{device_index}"
+        ip = device['ip']
+        self.logger.info("장비 점검+백업 시작: %s", ip)
+        self._print_cli_status(f"[{ip}] 점검+백업 시작")
+
+        result: dict = {
+            'ip': ip,
             'vendor': device['vendor'],
             'os': device['os'],
             'status': 'success',
@@ -886,76 +931,59 @@ class NetworkInspector:
             'inspection_results': {},
             'backup_file': ''
         }
-        
+
+        inspection_reported = False
+
+        def phase_callback(phase: str) -> None:
+            nonlocal inspection_reported
+            if phase == 'inspection' and not inspection_reported:
+                inspection_reported = True
+                if on_inspection_done:
+                    on_inspection_done(ip, True)
+
         try:
-            device, connection_results = self._connect_to_device(device, inspection_mode=True, backup_mode=True)
-            
+            device, connection_results = self._connect_to_device(
+                device,
+                inspection_mode=True,
+                backup_mode=True,
+                on_phase_complete=phase_callback,
+            )
+
             if 'error' in connection_results:
                 result['status'] = 'error'
                 result['error_message'] = connection_results['error']
+                if not inspection_reported and on_inspection_done:
+                    on_inspection_done(ip, False)
                 return result
-                
-            result['inspection_results'] = connection_results
-            
+
+            result['inspection_results'] = {
+                k: v for k, v in connection_results.items()
+                if k not in ('backup_file', 'backup_error')
+            }
+
             if 'backup_file' in connection_results:
                 result['backup_file'] = connection_results['backup_file']
-            
-            self.logger.info("장비 점검 및 백업 완료: %s", device['ip'])
-            self._print_cli_status(f"[{device['ip']}] 점검+백업 완료")
-            return result
-
-        except Exception as e:
-            self.logger.error("장비 점검 및 백업 중 오류 발생: %s - %s", device['ip'], e)
-            result['status'] = 'error'
-            result['error_message'] = str(e)
-            return result
-
-    def _inspect_and_backup_device_parallel(self, device: dict) -> dict:
-        """단일 장비를 점검/백업 스레드로 병렬 수행합니다."""
-        device_index = device.get('device_index', 'NA')
-        threading.current_thread().name = f"Device-{device_index}"
-        self.logger.info("장비 점검 및 백업(병렬) 시작: %s", device['ip'])
-        self._print_cli_status(f"[{device['ip']}] 점검+백업 병렬 시작")
-        result = {
-            'ip': device['ip'],
-            'vendor': device['vendor'],
-            'os': device['os'],
-            'status': 'success',
-            'error_message': '',
-            'inspection_results': {},
-            'backup_file': ''
-        }
-
-        try:
-            with ThreadPoolExecutor(max_workers=2) as executor:
-                inspection_future = executor.submit(self._inspect_device, device, "inspection")
-                backup_future = executor.submit(self._backup_device, device, "backup")
-                inspection_result = inspection_future.result()
-                backup_result = backup_future.result()
-
-            errors = []
-            if inspection_result.get('status') == 'error':
-                error_message = inspection_result.get('error_message', '').strip()
-                errors.append(f"점검 실패: {error_message or '알 수 없는 오류'}")
-            if backup_result.get('status') == 'error':
-                error_message = backup_result.get('error_message', '').strip()
-                errors.append(f"백업 실패: {error_message or '알 수 없는 오류'}")
-
-            if errors:
+                if on_backup_done:
+                    on_backup_done(ip, True)
+            elif 'backup_error' in connection_results:
                 result['status'] = 'error'
-                result['error_message'] = " | ".join(errors)
+                result['error_message'] = f"백업: {connection_results['backup_error']}"
+                if on_backup_done:
+                    on_backup_done(ip, False)
+            else:
+                if on_backup_done:
+                    on_backup_done(ip, True)
 
-            result['inspection_results'] = inspection_result.get('inspection_results', {})
-            result['backup_file'] = backup_result.get('backup_file', '')
-
-            self.logger.info("장비 점검 및 백업(병렬) 완료: %s", device['ip'])
-            self._print_cli_status(f"[{device['ip']}] 점검+백업 병렬 완료")
+            self.logger.info("장비 점검+백업 완료: %s", ip)
+            self._print_cli_status(f"[{ip}] 점검+백업 완료")
             return result
 
         except Exception as e:
-            self.logger.error("장비 점검 및 백업(병렬) 중 오류 발생: %s - %s", device['ip'], e)
+            self.logger.error("장비 점검+백업 중 오류: %s - %s", ip, e)
             result['status'] = 'error'
             result['error_message'] = str(e)
+            if not inspection_reported and on_inspection_done:
+                on_inspection_done(ip, False)
             return result
 
     def _inspect_device(self, device: dict, session_log_suffix: str | None = None) -> dict:

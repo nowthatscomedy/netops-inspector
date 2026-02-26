@@ -63,7 +63,9 @@ id_ed25519
 *.db
 *.sqlite3
 settings.json
+settings.yaml
 custom_rules.json
+custom_rules.yaml
 
 # ===== Output / Logs =====
 backup/
