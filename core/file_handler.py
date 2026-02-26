@@ -39,7 +39,7 @@ def read_command_file(filepath: str) -> list[str]:
         else:
             raise ValueError(f"지원하지 않는 파일 형식입니다: {suffix}")
     except Exception as e:
-        logger.error(f"명령어 파일 읽기 실패: {filepath}, 오류: {e}")
+        logger.error("명령어 파일 읽기 실패: %s, 오류: %s", filepath, e)
         raise
 
     return commands
@@ -61,14 +61,14 @@ def read_excel_file(filepath: str, password: str = None) -> pd.DataFrame:
                 office_file.decrypt(decrypted_file)
             
             df = pd.read_excel(decrypted_file)
-            logger.info(f"암호화된 파일 복호화 성공: {filepath}")
+            logger.info("암호화된 파일 복호화 성공: %s", filepath)
         else:
             df = pd.read_excel(filepath)
-            logger.info(f"선택한 파일: {filepath}")
+            logger.info("선택한 파일: %s", filepath)
         
         return df
     except Exception as e:
-        logger.error(f"엑셀 파일 읽기 실패: {filepath}, 오류: {e}")
+        logger.error("엑셀 파일 읽기 실패: %s, 오류: %s", filepath, e)
         raise
 
 def save_results_to_excel(
@@ -78,7 +78,7 @@ def save_results_to_excel(
 ):
     """결과를 엑셀 파일에 저장하고, 실패한 항목에 서식을 적용합니다."""
     try:
-        logger.info(f"결과 저장 시작: {output_filepath}")
+        logger.info("결과 저장 시작: %s", output_filepath)
 
         output_dir = os.path.dirname(output_filepath)
         if output_dir:
@@ -142,8 +142,8 @@ def save_results_to_excel(
                 except (ValueError, TypeError):
                     pass
 
-        logger.info(f"결과가 저장되었습니다: {output_filepath}")
+        logger.info("결과가 저장되었습니다: %s", output_filepath)
         
     except Exception as e:
-        logger.error(f"결과 저장 중 오류 발생: {str(e)}")
+        logger.error("결과 저장 중 오류 발생: %s", e)
         raise 

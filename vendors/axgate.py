@@ -180,7 +180,7 @@ class AxgateHandler(CustomDeviceHandler):
         if self.device['connection_type'].lower() != 'telnet':
             raise ValueError("AxgateHandler는 텔넷 연결만 지원합니다")
         
-        self.logger.debug(f"Axgate 장비 접속 시작: {self.device['ip']}")
+        self.logger.debug("Axgate 장비 접속 시작: %s", self.device['ip'])
         
         self.tn = telnetlib.Telnet(self.device['ip'], port=self.device['port'], timeout=self.timeout)
         
@@ -203,7 +203,7 @@ class AxgateHandler(CustomDeviceHandler):
     def enable(self):
         """특권 모드 진입 - Axgate는 enable 명령어가 필요 없음"""
         # Axgate는 로그인 후 이미 특권 모드이므로 아무 작업도 수행하지 않음
-        self.logger.debug(f"Axgate는 enable 명령어가 필요 없음: {self.device['ip']}")
+        self.logger.debug("Axgate는 enable 명령어가 필요 없음: %s", self.device['ip'])
         
         # 로그에 기록
         if self.session_log_file:
@@ -258,7 +258,7 @@ class AxgateSSHHandler(CustomDeviceHandler):
         if self.device['connection_type'].lower() != 'ssh':
             raise ValueError("AxgateSSHHandler는 SSH 연결만 지원합니다")
         
-        self.logger.debug(f"Axgate 장비 SSH 접속 시작: {self.device['ip']}")
+        self.logger.debug("Axgate 장비 SSH 접속 시작: %s", self.device['ip'])
         
         try:
             self.ssh = paramiko.SSHClient()
@@ -319,7 +319,7 @@ class AxgateSSHHandler(CustomDeviceHandler):
 
             final_prompt_line = output.strip().splitlines()[-1] if output.strip() else ""
             if "#" in final_prompt_line or ">" in final_prompt_line:
-                self.logger.info(f"Axgate SSH 로그인 성공. 최종 프롬프트 감지: {final_prompt_line}")
+                self.logger.info("Axgate SSH 로그인 성공. 최종 프롬프트 감지: %s", final_prompt_line)
                 return True
             else:
                 # 한번 더 읽어보기 (네트워크 지연 등 고려)
@@ -329,24 +329,24 @@ class AxgateSSHHandler(CustomDeviceHandler):
                 output += current_output
                 final_prompt_line = output.strip().splitlines()[-1] if output.strip() else ""
                 if "#" in final_prompt_line or ">" in final_prompt_line:
-                    self.logger.info(f"Axgate SSH 로그인 성공 (추가 읽기 후). 최종 프롬프트 감지: {final_prompt_line}")
+                    self.logger.info("Axgate SSH 로그인 성공 (추가 읽기 후). 최종 프롬프트 감지: %s", final_prompt_line)
                     return True
                 else:
-                    self.logger.error(f"Axgate SSH 로그인 실패: 최종 프롬프트(# 또는 >)를 찾을 수 없습니다. 최종 출력 기록: {output}")
+                    self.logger.error("Axgate SSH 로그인 실패: 최종 프롬프트(# 또는 >)를 찾을 수 없습니다. 최종 출력 기록: %s", output)
                     raise paramiko.AuthenticationException("Failed to find final prompt after SSH operations on Axgate device.")
 
         except paramiko.AuthenticationException as auth_e:
-            self.logger.error(f"Axgate SSH 인증 실패: {str(auth_e)}")
+            self.logger.error("Axgate SSH 인증 실패: %s", auth_e)
             if self.channel: self.channel.close()
             if self.ssh: self.ssh.close()
             raise
         except paramiko.ssh_exception.SSHException as ssh_e:
-            self.logger.error(f"Axgate SSH 연결 실패: {str(ssh_e)}")
+            self.logger.error("Axgate SSH 연결 실패: %s", ssh_e)
             if self.channel: self.channel.close()
             if self.ssh: self.ssh.close()
             raise ValueError(f"SSH 연결 실패: {self.device['ip']}")
         except Exception as e:
-            self.logger.error(f"Axgate SSH 접속 중 예상치 못한 예외 발생: {str(e)}")
+            self.logger.error("Axgate SSH 접속 중 예상치 못한 예외 발생: %s", e)
             if self.channel: self.channel.close()
             if self.ssh: self.ssh.close()
             raise
@@ -392,7 +392,7 @@ class AxgateSSHHandler(CustomDeviceHandler):
     
     def enable(self):
         """특권 모드 진입 - Axgate는 이미 특권 모드로 로그인됨"""
-        self.logger.debug(f"Axgate SSH는 enable 명령어가 필요 없음: {self.device['ip']}")
+        self.logger.debug("Axgate SSH는 enable 명령어가 필요 없음: %s", self.device['ip'])
         
         # 로그에 기록
         if self.session_log_file:

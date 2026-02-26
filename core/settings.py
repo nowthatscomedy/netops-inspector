@@ -8,6 +8,9 @@ from typing import Dict, List
 class AppSettings:
     console_log_level: str = "WARNING"
     inspection_excludes: Dict[str, Dict[str, List[str]]] = field(default_factory=dict)
+    max_retries: int = 3
+    timeout: int = 10
+    max_workers: int = 10
 
 
 def get_settings_path() -> Path:
@@ -64,9 +67,24 @@ def load_settings() -> AppSettings:
 
     inspection_excludes = _normalize_excludes(data.get("inspection_excludes", {}))
 
+    max_retries = data.get("max_retries", 3)
+    if not isinstance(max_retries, int) or max_retries < 1:
+        max_retries = 3
+
+    timeout = data.get("timeout", 10)
+    if not isinstance(timeout, int) or timeout < 1:
+        timeout = 10
+
+    max_workers = data.get("max_workers", 10)
+    if not isinstance(max_workers, int) or max_workers < 1:
+        max_workers = 10
+
     return AppSettings(
         console_log_level=console_log_level.upper(),
-        inspection_excludes=inspection_excludes
+        inspection_excludes=inspection_excludes,
+        max_retries=max_retries,
+        timeout=timeout,
+        max_workers=max_workers,
     )
 
 

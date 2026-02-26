@@ -211,7 +211,7 @@ class CiscoLegacyTelnetHandler(CustomDeviceHandler):
         if self.device['connection_type'].lower() != 'telnet':
             raise ValueError("CiscoLegacyTelnetHandler는 텔넷 연결만 지원합니다")
         
-        self.logger.debug(f"Legacy Cisco 장비 Telnet 접속 시작: {self.device['ip']}")
+        self.logger.debug("Legacy Cisco 장비 Telnet 접속 시작: %s", self.device['ip'])
         
         self.tn = telnetlib.Telnet(self.device['ip'], port=self.device['port'], timeout=self.timeout)
         
@@ -249,7 +249,7 @@ class CiscoLegacyTelnetHandler(CustomDeviceHandler):
             
             # 로그인 성공 확인 (프롬프트에 > 또는 # 포함 확인)
             if ">" in output or "#" in output:
-                self.logger.debug(f"로그인 성공: {self.device['ip']}")
+                self.logger.debug("로그인 성공: %s", self.device['ip'])
                 return True
             else:
                 # 추가 시간 대기 후 다시 확인
@@ -257,15 +257,15 @@ class CiscoLegacyTelnetHandler(CustomDeviceHandler):
                 output = self.tn.read_very_eager().decode('utf-8', errors='ignore')
                 
                 if ">" in output or "#" in output:
-                    self.logger.debug(f"로그인 성공 (추가 대기 후): {self.device['ip']}")
+                    self.logger.debug("로그인 성공 (추가 대기 후): %s", self.device['ip'])
                     return True
                 else:
-                    self.logger.warning(f"로그인 상태 불확실: {self.device['ip']}")
+                    self.logger.warning("로그인 상태 불확실: %s", self.device['ip'])
                     # 계속 진행
                     return True
             
         except Exception as e:
-            self.logger.error(f"Legacy Cisco Telnet 접속 실패: {str(e)}")
+            self.logger.error("Legacy Cisco Telnet 접속 실패: %s", e)
             if self.session_log_file:
                 with open(self.session_log_file, 'a', encoding='utf-8') as log:
                     log.write(f"\n접속 실패: {str(e)}\n")
@@ -279,7 +279,7 @@ class CiscoLegacyTelnetHandler(CustomDeviceHandler):
     
     def enable(self):
         """특권 모드 진입"""
-        self.logger.debug(f"Legacy Cisco 장비 enable 모드 진입 시도: {self.device['ip']}")
+        self.logger.debug("Legacy Cisco 장비 enable 모드 진입 시도: %s", self.device['ip'])
         
         try:
             # 현재 프롬프트 확인
@@ -289,7 +289,7 @@ class CiscoLegacyTelnetHandler(CustomDeviceHandler):
             
             # enable 모드(#)인지 확인
             if "#" in output:
-                self.logger.debug(f"이미 enable 모드 상태: {self.device['ip']}")
+                self.logger.debug("이미 enable 모드 상태: %s", self.device['ip'])
                 self.log_output("현재 프롬프트 (이미 enable 모드)", output)
                 return True
             
@@ -312,7 +312,7 @@ class CiscoLegacyTelnetHandler(CustomDeviceHandler):
             self.log_output("enable 명령 실행 후 출력", output)
             
             if "#" in output:
-                self.logger.debug(f"enable 모드 진입 성공: {self.device['ip']}")
+                self.logger.debug("enable 모드 진입 성공: %s", self.device['ip'])
                 
                 # terminal length 0 설정
                 self.tn.write(b"terminal length 0\n")
@@ -322,11 +322,11 @@ class CiscoLegacyTelnetHandler(CustomDeviceHandler):
                 
                 return True
             else:
-                self.logger.warning(f"enable 모드 진입 실패: {self.device['ip']}")
+                self.logger.warning("enable 모드 진입 실패: %s", self.device['ip'])
                 return False
                 
         except Exception as e:
-            self.logger.error(f"enable 모드 진입 중 오류: {str(e)}")
+            self.logger.error("enable 모드 진입 중 오류: %s", e)
             return False
     
     def send_command(self, command, timeout=None):
@@ -388,7 +388,7 @@ class CiscoLegacyTelnetHandler(CustomDeviceHandler):
             return result
             
         except Exception as e:
-            self.logger.error(f"명령어 실행 실패 ({command}): {str(e)}")
+            self.logger.error("명령어 실행 실패 (%s): %s", command, e)
             return f"Error executing command: {str(e)}"
     
     def disconnect(self):

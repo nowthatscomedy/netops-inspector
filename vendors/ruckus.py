@@ -140,7 +140,7 @@ class RuckusIcxSSHHandler(CustomDeviceHandler):
         if self.device['connection_type'].lower() != 'ssh':
             raise ValueError("RuckusIcxSSHHandler는 SSH 연결만 지원합니다")
 
-        self.logger.debug(f"Ruckus ICX 장비 SSH 접속 시작: {self.device['ip']}")
+        self.logger.debug("Ruckus ICX 장비 SSH 접속 시작: %s", self.device['ip'])
 
         try:
             self.ssh = paramiko.SSHClient()
@@ -167,14 +167,14 @@ class RuckusIcxSSHHandler(CustomDeviceHandler):
                 # Find prompt from the last line
                 last_line = output.strip().splitlines()[-1]
                 self.prompt = last_line.strip()
-                self.logger.debug(f"Ruckus ICX 접속 성공 및 프롬프트 확인: {self.prompt}")
+                self.logger.debug("Ruckus ICX 접속 성공 및 프롬프트 확인: %s", self.prompt)
                 return True
             else:
                 self.logger.error("Ruckus ICX 접속 실패: 프롬프트를 찾을 수 없습니다.")
                 raise ConnectionError("Ruckus ICX 접속 실패: 프롬프트를 찾을 수 없습니다.")
 
         except Exception as e:
-            self.logger.error(f"Ruckus ICX SSH 접속 실패: {str(e)}")
+            self.logger.error("Ruckus ICX SSH 접속 실패: %s", e)
             if self.ssh:
                 self.ssh.close()
             raise
@@ -191,7 +191,7 @@ class RuckusIcxSSHHandler(CustomDeviceHandler):
 
     def enable(self):
         """특권 모드 진입"""
-        self.logger.debug(f"Ruckus ICX enable 모드 진입 시도: {self.device['ip']}")
+        self.logger.debug("Ruckus ICX enable 모드 진입 시도: %s", self.device['ip'])
 
         self.channel.send('\n')
         time.sleep(0.5)
@@ -217,7 +217,7 @@ class RuckusIcxSSHHandler(CustomDeviceHandler):
             last_line = output.strip().splitlines()[-1] if output.strip() else ''
             if "#" in last_line:
                 self.prompt = last_line.strip()
-                self.logger.debug(f"특권 모드 진입 성공. 새 프롬프트: {self.prompt}")
+                self.logger.debug("특권 모드 진입 성공. 새 프롬프트: %s", self.prompt)
             else:
                 self.logger.warning("특권 모드 진입에 실패했을 수 있습니다.")
 
@@ -274,7 +274,7 @@ class RuckusIcxSSHHandler(CustomDeviceHandler):
 
     def disconnect(self):
         """SSH 연결 종료"""
-        self.logger.debug(f"Ruckus ICX SSH 연결 종료: {self.device['ip']}")
+        self.logger.debug("Ruckus ICX SSH 연결 종료: %s", self.device['ip'])
         if self.channel:
             self.channel.close()
         if self.ssh:

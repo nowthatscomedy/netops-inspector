@@ -144,7 +144,7 @@ class DayouDswSshHandler(CustomDeviceHandler):
         if self.device['connection_type'].lower() != 'ssh':
             raise ValueError("DayouDswSshHandler는 SSH 연결만 지원합니다")
 
-        self.logger.debug(f"DAYOU DSW 장비 SSH 접속 시작: {self.device['ip']}")
+        self.logger.debug("DAYOU DSW 장비 SSH 접속 시작: %s", self.device['ip'])
 
         try:
             self.ssh = paramiko.SSHClient()
@@ -171,14 +171,14 @@ class DayouDswSshHandler(CustomDeviceHandler):
                 # Find prompt from the last line
                 last_line = output.strip().splitlines()[-1]
                 self.prompt = last_line.strip()
-                self.logger.debug(f"DAYOU DSW 접속 성공 및 프롬프트 확인: {self.prompt}")
+                self.logger.debug("DAYOU DSW 접속 성공 및 프롬프트 확인: %s", self.prompt)
                 return True
             else:
                 self.logger.error("DAYOU DSW 접속 실패: 프롬프트를 찾을 수 없습니다.")
                 raise ConnectionError("DAYOU DSW 접속 실패: 프롬프트를 찾을 수 없습니다.")
 
         except Exception as e:
-            self.logger.error(f"DAYOU DSW SSH 접속 실패: {str(e)}")
+            self.logger.error("DAYOU DSW SSH 접속 실패: %s", e)
             if self.ssh:
                 self.ssh.close()
             raise
@@ -195,7 +195,7 @@ class DayouDswSshHandler(CustomDeviceHandler):
 
     def enable(self):
         """특권 모드 진입"""
-        self.logger.debug(f"DAYOU DSW enable 모드 진입 시도: {self.device['ip']}")
+        self.logger.debug("DAYOU DSW enable 모드 진입 시도: %s", self.device['ip'])
 
         self.channel.send('\n')
         time.sleep(0.5)
@@ -221,7 +221,7 @@ class DayouDswSshHandler(CustomDeviceHandler):
             last_line = output.strip().splitlines()[-1] if output.strip() else ''
             if "#" in last_line:
                 self.prompt = last_line.strip()
-                self.logger.debug(f"특권 모드 진입 성공. 새 프롬프트: {self.prompt}")
+                self.logger.debug("특권 모드 진입 성공. 새 프롬프트: %s", self.prompt)
             else:
                 self.logger.warning("특권 모드 진입에 실패했을 수 있습니다.")
 
@@ -280,7 +280,7 @@ class DayouDswSshHandler(CustomDeviceHandler):
 
     def disconnect(self):
         """SSH 연결 종료"""
-        self.logger.debug(f"DAYOU DSW SSH 연결 종료: {self.device['ip']}")
+        self.logger.debug("DAYOU DSW SSH 연결 종료: %s", self.device['ip'])
         if self.channel:
             self.channel.close()
         if self.ssh:

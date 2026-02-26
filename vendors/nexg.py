@@ -76,10 +76,10 @@ class VForceSSHHandler(CustomDeviceHandler):
         if self.device['connection_type'].lower() != 'ssh':
             raise ValueError("VForceSSHHandler는 SSH 연결만 지원합니다")
         
-        self.logger.debug(f"VForce 장비 SSH 접속 시작: {self.device['ip']}")
+        self.logger.debug("VForce 장비 SSH 접속 시작: %s", self.device['ip'])
 
         # 디버깅을 위한 기본 연결 정보 출력
-        self.logger.debug(f"연결 정보 - IP: {self.device['ip']}, PORT: {self.device['port']}, USER: {self.device['username']}")
+        self.logger.debug("연결 정보 - IP: %s, PORT: %s, USER: %s", self.device['ip'], self.device['port'], self.device['username'])
         
         try:
             # 소켓 및 Transport 설정 (사용자 이름 직접 처리)
@@ -121,7 +121,7 @@ class VForceSSHHandler(CustomDeviceHandler):
             
             # 로그인 성공 여부 확인 (프롬프트 확인)
             if "#" in output or ">" in output:
-                self.logger.debug(f"로그인 성공: {self.device['ip']}")
+                self.logger.debug("로그인 성공: %s", self.device['ip'])
                 return True
             else:
                 # 추가 출력 확인
@@ -130,7 +130,7 @@ class VForceSSHHandler(CustomDeviceHandler):
                 self.log_output("추가 대기 후 응답", extra_output)
                 
                 if "#" in extra_output or ">" in extra_output:
-                    self.logger.debug(f"추가 대기 후 로그인 성공: {self.device['ip']}")
+                    self.logger.debug("추가 대기 후 로그인 성공: %s", self.device['ip'])
                     return True
                 else:
                     # 로그인 성공 여부 불확실하지만 계속 진행
@@ -138,7 +138,7 @@ class VForceSSHHandler(CustomDeviceHandler):
                     return True
             
         except Exception as e:
-            self.logger.error(f"VForce SSH 연결 실패: {str(e)}")
+            self.logger.error("VForce SSH 연결 실패: %s", e)
             if self.session_log_file:
                 with open(self.session_log_file, 'a', encoding='utf-8') as log:
                     log.write(f"\nSSH 연결 실패: {str(e)}\n")
@@ -155,12 +155,12 @@ class VForceSSHHandler(CustomDeviceHandler):
                     output += chunk.decode('utf-8', 'ignore')
                     time.sleep(0.1)
         except Exception as e:
-            self.logger.warning(f"채널 읽기 중 오류: {str(e)}")
+            self.logger.warning("채널 읽기 중 오류: %s", e)
         return output
     
     def enable(self):
         """특권 모드 진입 - VForce는 enable 명령어가 필요할 수 있음"""
-        self.logger.debug(f"VForce enable 모드 확인: {self.device['ip']}")
+        self.logger.debug("VForce enable 모드 확인: %s", self.device['ip'])
         
         # 로그에 기록
         if self.session_log_file:
@@ -199,7 +199,7 @@ class VForceSSHHandler(CustomDeviceHandler):
                     else:
                         self.logger.warning("특권 모드 전환 실패")
         except Exception as e:
-            self.logger.warning(f"특권 모드 전환 확인 중 오류: {str(e)}")
+            self.logger.warning("특권 모드 전환 확인 중 오류: %s", e)
     
     def send_command(self, command, timeout=None):
         """명령어 실행"""
@@ -274,7 +274,7 @@ class VForceSSHHandler(CustomDeviceHandler):
             
             return cleaned_output
         except Exception as e:
-            self.logger.error(f"명령어 실행 중 오류: {str(e)}")
+            self.logger.error("명령어 실행 중 오류: %s", e)
             self.log_output("명령어 실행 오류", str(e))
             return f"명령어 실행 오류: {str(e)}"
     
@@ -295,7 +295,7 @@ class VForceSSHHandler(CustomDeviceHandler):
                     log.write(f"세션 완료\n")
                     log.write(f"{'='*50}\n\n")
         except Exception as e:
-            self.logger.warning(f"연결 종료 중 오류: {str(e)}")
+            self.logger.warning("연결 종료 중 오류: %s", e)
 
 
 @register_handler('nexg', 'vforce', 'telnet')
@@ -311,7 +311,7 @@ class VForceTelnetHandler(CustomDeviceHandler):
         if self.device['connection_type'].lower() != 'telnet':
             raise ValueError("VForceTelnetHandler는 텔넷 연결만 지원합니다")
         
-        self.logger.debug(f"VForce 장비 Telnet 접속 시작: {self.device['ip']}")
+        self.logger.debug("VForce 장비 Telnet 접속 시작: %s", self.device['ip'])
         
         self.tn = telnetlib.Telnet(self.device['ip'], port=self.device['port'], timeout=self.timeout)
         
@@ -333,7 +333,7 @@ class VForceTelnetHandler(CustomDeviceHandler):
     
     def enable(self):
         """특권 모드 진입 - NexG VForce도 필요할 수 있음"""
-        self.logger.debug(f"VForce enable 모드 확인: {self.device['ip']}")
+        self.logger.debug("VForce enable 모드 확인: %s", self.device['ip'])
         
         # 현재 프롬프트 확인
         self.tn.write(b"\n")
@@ -342,7 +342,7 @@ class VForceTelnetHandler(CustomDeviceHandler):
         
         # '>' 프롬프트이면 enable 모드로 전환 시도
         if ">" in output and "#" not in output:
-            self.logger.debug(f"일반 모드(>)에서 특권 모드(#)로 전환 시도")
+            self.logger.debug("일반 모드(>)에서 특권 모드(#)로 전환 시도")
             self.tn.write(b"enable\n")
             time.sleep(1)
             

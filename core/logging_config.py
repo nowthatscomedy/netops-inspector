@@ -79,12 +79,11 @@ def init_logging(run_timestamp: str | None = None,
         console_handler.setFormatter(ColorFormatter(log_format, enable_color=enable_color))
         root_logger.addHandler(console_handler)
 
-    # 서드파티 라이브러리 로깅 레벨 정리 (과도한 디버그 억제)
-    logging.getLogger('paramiko').setLevel(logging.DEBUG)
-    logging.getLogger('netmiko').setLevel(logging.DEBUG)
+    logging.getLogger('paramiko').setLevel(logging.WARNING)
+    logging.getLogger('netmiko').setLevel(logging.WARNING)
 
     root_logger.debug("전역 로깅 초기화 완료")
-    root_logger.debug(f"로그 파일 경로: {log_file}")
+    root_logger.debug("로그 파일 경로: %s", log_file)
 
     return log_file
 

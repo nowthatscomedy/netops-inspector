@@ -1,17 +1,13 @@
-import pandas as pd
 import re
 from netmiko import ConnectHandler
-from typing import Dict, List, Tuple
 import os
 from datetime import datetime
 import threading
-import ipaddress
 import socket
 import time
 import logging
 import traceback
 from concurrent.futures import ThreadPoolExecutor, as_completed
-import telnetlib
 import sys
 
 from vendors import (
@@ -33,27 +29,26 @@ class NetworkInspector:
         backup_only: bool = False,
         inspection_only: bool = False,
         run_timestamp: str | None = None,
-        inspection_excludes: Dict[str, Dict[str, List[str]]] | None = None
+        inspection_excludes: dict[str, dict[str, list[str]]] | None = None,
+        max_retries: int = 3,
+        timeout: int = 10,
+        max_workers: int = 10,
     ):
-        # 출력 파일명에 타임스탬프 추가
         file_name, file_ext = os.path.splitext(output_excel)
         timestamp = run_timestamp or datetime.now().strftime('%Y%m%d_%H%M%S')
         self.output_dir = "results"
         os.makedirs(self.output_dir, exist_ok=True)
         self.output_excel = os.path.join(self.output_dir, f"{file_name}_{timestamp}{file_ext}")
-        self.max_retries = 3  # 최대 재시도 횟수
-        self.timeout = 10  # 연결 타임아웃 (초)
-        # 공통 로깅 설정 사용 (root 로거 기반)
+        self.max_retries = max_retries
+        self.timeout = timeout
+        self.max_workers = max_workers
         self.logger = logging.getLogger(__name__)
-        # 동일한 타임스탬프 사용
         self.backup_dir = os.path.join("backup", timestamp)
         self.session_log_dir = os.path.join("session_logs", timestamp)
         
-        # 세션 로그 디렉토리는 항상 생성
         os.makedirs("session_logs", exist_ok=True)
         os.makedirs(self.session_log_dir, exist_ok=True)
         
-        # 백업만 하거나 점검과 백업을 모두 할 경우에만 백업 디렉토리 생성
         if not inspection_only:
             os.makedirs("backup", exist_ok=True)
             os.makedirs(self.backup_dir, exist_ok=True)
@@ -61,7 +56,7 @@ class NetworkInspector:
         self.backup_only = backup_only
         self.inspection_only = inspection_only
         
-        self.devices = [] # This will be loaded later
+        self.devices = []
         self.results = []
         self.results_lock = threading.Lock()
         self.log_lock = threading.Lock()
@@ -69,7 +64,7 @@ class NetworkInspector:
         self.inspection_excludes = inspection_excludes or {}
         
     
-    def _should_use_parallel_for_device(self, device: Dict) -> bool:
+    def _should_use_parallel_for_device(self, device: dict) -> bool:
         """장비별 점검/백업 동시 접속 여부를 판단합니다."""
         vendor_key = str(device.get("vendor", "")).strip().lower()
         os_key = str(device.get("os", "")).strip().lower()
@@ -82,16 +77,16 @@ class NetworkInspector:
             return False
         return True
 
-    def _get_device_commands(self, vendor: str, model: str) -> List[str]:
+    def _get_device_commands(self, vendor: str, model: str) -> list[str]:
         """장비별 점검 명령어를 가져옵니다."""
         try:
-            self.logger.debug(f"장비 명령어 조회 시작: {vendor} {model}")
+            self.logger.debug("장비 명령어 조회 시작: %s %s", vendor, model)
             v = str(vendor).strip().lower()
             m = str(model).strip().lower()
             cmds = INSPECTION_COMMANDS.get(v, {}).get(m, [])
             excludes = set(self.inspection_excludes.get(v, {}).get(m, []))
             if excludes:
-                filtered_cmds: List[str] = []
+                filtered_cmds: list[str] = []
                 for cmd in cmds:
                     if cmd in excludes:
                         continue
@@ -101,95 +96,83 @@ class NetworkInspector:
                     filtered_cmds.append(cmd)
                 cmds = filtered_cmds
             if not cmds:
-                self.logger.warning(f"점검 명령어를 찾을 수 없음: {v} {m}")
+                self.logger.warning("점검 명령어를 찾을 수 없음: %s %s", v, m)
             else:
-                self.logger.debug(f"점검 명령어 목록: {cmds}")
+                self.logger.debug("점검 명령어 목록: %s", cmds)
             return cmds
         except Exception as e:
-            self.logger.error(f"장비 명령어 조회 중 오류 발생: {str(e)}")
+            self.logger.error("장비 명령어 조회 중 오류 발생: %s", e)
             return []
     
     def _get_backup_command(self, vendor: str, model: str) -> str:
         """장비별 백업 명령어를 가져옵니다."""
         try:
-            self.logger.debug(f"백업 명령어 조회 시작: {vendor} {model}")
+            self.logger.debug("백업 명령어 조회 시작: %s %s", vendor, model)
             v = str(vendor).strip().lower()
             m = str(model).strip().lower()
             cmd = BACKUP_COMMANDS.get(v, {}).get(m, '')
             if not cmd:
-                self.logger.warning(f"백업 명령어를 찾을 수 없음: {v} {m}")
+                self.logger.warning("백업 명령어를 찾을 수 없음: %s %s", v, m)
             else:
-                self.logger.debug(f"백업 명령어: {cmd}")
+                self.logger.debug("백업 명령어: %s", cmd)
             return cmd
         except Exception as e:
-            self.logger.error(f"백업 명령어 조회 중 오류 발생: {str(e)}")
+            self.logger.error("백업 명령어 조회 중 오류 발생: %s", e)
             return ""
     
-    def _parse_command_output(self, vendor: str, model: str, command: str, output: str) -> Dict:
+    def _parse_command_output(self, vendor: str, model: str, command: str, output: str) -> dict:
         """명령어 출력을 파싱합니다."""
-        self.logger.debug(f"명령어 출력 파싱 시작: {command}")
+        self.logger.debug("명령어 출력 파싱 시작: %s", command)
         result = {}
         vendor_lower = str(vendor).lower()
         model_lower = str(model).lower()
         excludes = set(self.inspection_excludes.get(vendor_lower, {}).get(model_lower, []))
         if command in excludes:
-            self.logger.debug(f"파싱 제외(명령어 단위): {command}")
+            self.logger.debug("파싱 제외(명령어 단위): %s", command)
             return result
         
-        # 먼저 해당 벤더/모델/명령어에 대한 파싱 규칙이 존재하는지 확인
-        # PARSING_RULES에 해당 벤더가 없는 경우
         if vendor_lower not in PARSING_RULES:
-            self.logger.debug(f"파싱 규칙 없음 (벤더): {vendor}")
+            self.logger.debug("파싱 규칙 없음 (벤더): %s", vendor)
             return result
             
-        # PARSING_RULES에 해당 모델이 없는 경우
         if model_lower not in PARSING_RULES[vendor_lower]:
-            self.logger.debug(f"파싱 규칙 없음 (모델): {model}")
+            self.logger.debug("파싱 규칙 없음 (모델): %s", model)
             return result
             
-        # PARSING_RULES에 해당 명령어가 없는 경우
         if command not in PARSING_RULES[vendor_lower][model_lower]:
-            self.logger.debug(f"파싱 규칙 없음 (명령어): {command}")
+            self.logger.debug("파싱 규칙 없음 (명령어): %s", command)
             return result
         
         try:
             rules = PARSING_RULES[vendor_lower][model_lower][command]
             
-            # 커스텀 파서 함수 호출 처리
             if 'custom_parser' in rules:
                 parser_name = rules['custom_parser']
                 
-                # CUSTOM_PARSERS 딕셔너리에서 파서 함수 찾기
                 if parser_name in CUSTOM_PARSERS:
                     parser_func = CUSTOM_PARSERS[parser_name]
                     parsed_value = parser_func(output)
 
-                    # 파서가 딕셔너리를 반환하면, 결과를 직접 업데이트
                     if isinstance(parsed_value, dict):
                         result.update(parsed_value)
-                    # 그렇지 않으면, 지정된 컬럼에 할당
                     elif 'output_column' in rules:
                         column = rules['output_column']
                         result[column] = parsed_value
                 else:
-                    self.logger.error(f"커스텀 파서 함수 '{parser_name}'를 찾을 수 없습니다.")
+                    self.logger.error("커스텀 파서 함수 '%s'를 찾을 수 없습니다.", parser_name)
 
-            # 단일 패턴인 경우
             elif 'pattern' in rules:
                 pattern = rules['pattern']
                 column = rules['output_column']
                 matches = re.finditer(pattern, output, re.MULTILINE)
                 values = [match.group(1) for match in matches]
                 
-                # first_match_only 옵션이 있으면 첫 번째 매치만 사용
                 if rules.get('first_match_only', False) and values:
                     result[column] = values[0]
                 else:
                     result[column] = ', '.join(values)
-            # 여러 패턴인 경우
             elif 'patterns' in rules:
                 for pattern_rule in rules['patterns']:
-                    # 패턴별 커스텀 파서 처리
                     if 'custom_parser' in pattern_rule:
                         parser_name = pattern_rule['custom_parser']
                         column = pattern_rule['output_column']
@@ -198,32 +181,26 @@ class NetworkInspector:
                             parser_func = CUSTOM_PARSERS[parser_name]
                             result[column] = parser_func(output)
                         else:
-                            self.logger.error(f"커스텀 파서 함수 '{parser_name}'를 찾을 수 없습니다.")
+                            self.logger.error("커스텀 파서 함수 '%s'를 찾을 수 없습니다.", parser_name)
                         continue
                         
                     pattern = pattern_rule['pattern']
                     matches = list(re.finditer(pattern, output, re.MULTILINE))
                     
-                    # 매치가 없으면 건너뛰기
                     if not matches:
                         continue
                     
-                    # 여러 컬럼에 매핑하는 경우 (그룹이 여러 개)
                     if 'output_columns' in pattern_rule and matches:
                         columns = pattern_rule['output_columns']
                         for i, col in enumerate(columns):
-                            # 인덱스는 1부터 시작 (그룹 0은 전체 매치)
                             group_idx = i + 1
                             if group_idx < len(matches[0].groups()) + 1:
                                 result[col] = matches[0].group(group_idx)
                         
-                        # 추가 처리 로직 (CPU 및 메모리 사용량 계산)
-                        if 'process' in pattern_rule: # 'process' 키가 있는지 먼저 확인
-                            process_info = pattern_rule['process'] # 'process' 정보를 가져옴
+                        if 'process' in pattern_rule:
+                            process_info = pattern_rule['process']
                             
-                            # 'percentage' 타입 처리
                             if process_info['type'] == 'percentage':
-                                # 'inputs' 키와 해당 컬럼들이 result에 있는지 확인
                                 if 'inputs' in process_info and all(col in result for col in process_info['inputs']):
                                     inputs = process_info['inputs']
                                     try:
@@ -233,15 +210,17 @@ class NetworkInspector:
                                             percentage = round((numerator / denominator) * 100, 2)
                                             result[process_info['output_column']] = f"{percentage}%"
                                         else:
-                                            self.logger.warning(f"분모가 0입니다: {inputs[1]} (명령어: {command})")
+                                            self.logger.warning("분모가 0입니다: %s (명령어: %s)", inputs[1], command)
                                     except (ValueError, TypeError) as e:
-                                        self.logger.warning(f"백분율 계산 실패: {str(e)} (명령어: {command})")
+                                        self.logger.warning("백분율 계산 실패: %s (명령어: %s)", e, command)
                                 else:
-                                    self.logger.warning(f"'percentage' process: 'inputs' 키가 없거나, result에 해당 컬럼이 없습니다. (명령어: {command})")
+                                    self.logger.warning(
+                                        "'percentage' process: 'inputs' 키가 없거나, result에 해당 컬럼이 없습니다. (명령어: %s)",
+                                        command
+                                    )
 
-                            # 'calculate_usage_from_available' 타입 처리
                             elif process_info['type'] == 'calculate_usage_from_available':
-                                if 'input_column' in process_info: # 'input_column' 키가 있는지 확인
+                                if 'input_column' in process_info:
                                     input_col = process_info['input_column']
                                     output_col = process_info['output_column']
                                     if input_col in result:
@@ -250,34 +229,39 @@ class NetworkInspector:
                                             available_percent = float(available_percent_str)
                                             usage_percent = round(100.0 - available_percent, 2)
                                             result[output_col] = f"{usage_percent}%"
-                                            # 성공적으로 'Memory Usage %'를 계산한 후, 원본 'Memory Available %' 컬럼 삭제
-                                            if input_col in result: # 삭제 전 한 번 더 확인 (이론상 항상 있어야 함)
+                                            if input_col in result:
                                                 del result[input_col]
                                         except ValueError:
-                                            self.logger.warning(f"사용 가능한 메모리 백분율 계산 실패: {result[input_col]} (명령어: {command})")
+                                            self.logger.warning(
+                                                "사용 가능한 메모리 백분율 계산 실패: %s (명령어: %s)",
+                                                result[input_col], command
+                                            )
                                     else:
-                                        self.logger.warning(f"'calculate_usage_from_available' process: 입력 컬럼 '{input_col}'을 result에서 찾을 수 없습니다. (명령어: {command})")
+                                        self.logger.warning(
+                                            "'calculate_usage_from_available' process: 입력 컬럼 '%s'을 result에서 찾을 수 없습니다. (명령어: %s)",
+                                            input_col, command
+                                        )
                                 else:
-                                    self.logger.warning(f"'calculate_usage_from_available' process: 'input_column' 키가 없습니다. (명령어: {command})")
-                    # 단일 컬럼에 매핑하는 경우
+                                    self.logger.warning(
+                                        "'calculate_usage_from_available' process: 'input_column' 키가 없습니다. (명령어: %s)",
+                                        command
+                                    )
                     elif 'output_column' in pattern_rule and matches:
                         column = pattern_rule['output_column']
                         values = [match.group(1) for match in matches]
                         
-                        # first_match_only 옵션이 있으면 첫 번째 매치만 사용
                         if pattern_rule.get('first_match_only', False) and values:
                             result[column] = values[0]
                         else:
                             result[column] = ', '.join(values)
             else:
-                # 패턴이 없는 경우 전체 출력을 그대로 사용
                 if 'output_column' in rules:
                     result[rules['output_column']] = output.strip()
                 
-            self.logger.debug(f"파싱 결과: {result}")
+            self.logger.debug("파싱 결과: %s", result)
         except (KeyError, AttributeError) as e:
-            self.logger.warning(f"파싱 실패: {str(e)}")
-            self.logger.debug(f"파싱 실패 예외 상세: {traceback.format_exc()}")
+            self.logger.warning("파싱 실패: %s", e)
+            self.logger.debug("파싱 실패 예외 상세: %s", traceback.format_exc())
         if excludes:
             filtered = {}
             for key, value in result.items():
@@ -328,7 +312,7 @@ class NetworkInspector:
         parse_ids.discard(f"{command}::")
         return parse_ids
 
-    def _get_output_columns_for_command(self, vendor: str, model: str, command: str) -> List[str]:
+    def _get_output_columns_for_command(self, vendor: str, model: str, command: str) -> list[str]:
         """명령어에 매핑되는 출력 컬럼 목록을 순서대로 반환합니다."""
         vendor_key = str(vendor).strip().lower()
         model_key = str(model).strip().lower()
@@ -336,7 +320,7 @@ class NetworkInspector:
         if not isinstance(rules, dict):
             return []
 
-        columns: List[str] = []
+        columns: list[str] = []
 
         def add_column(column: str | None) -> None:
             if not column:
@@ -371,9 +355,9 @@ class NetworkInspector:
 
         return columns
 
-    def get_available_inspection_columns(self, devices: List[Dict]) -> List[str]:
+    def get_available_inspection_columns(self, devices: list[dict]) -> list[str]:
         """장비 목록 기준으로 점검 결과 컬럼을 순서대로 수집합니다."""
-        ordered_columns: List[str] = []
+        ordered_columns: list[str] = []
         seen: set[str] = set()
 
         for device in devices:
@@ -398,50 +382,33 @@ class NetworkInspector:
     def _test_tcping(self, ip: str, port: int, timeout: int = 5) -> bool:
         """TCP 연결 테스트를 수행합니다."""
         try:
-            # 소켓 생성
-            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            sock.settimeout(timeout)
-            
-            # 연결 시도
-            result = sock.connect_ex((ip, port))
-            sock.close()
-            
-            # 연결 성공 시 0 반환
-            return result == 0
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+                sock.settimeout(timeout)
+                result = sock.connect_ex((ip, port))
+                return result == 0
         except Exception as e:
-            self.logger.error(f"TCP 연결 테스트 실패 ({ip}:{port}): {str(e)}")
+            self.logger.error("TCP 연결 테스트 실패 (%s:%s): %s", ip, port, e)
             return False
 
     def _connect_to_device(
         self,
-        device: Dict,
+        device: dict,
         inspection_mode: bool = True,
         backup_mode: bool = True,
         session_log_suffix: str | None = None,
-        custom_commands: List[str] | None = None
-    ) -> Tuple[Dict, Dict]:
-        """장비에 연결하고 명령어를 실행합니다.
-        
-        Args:
-            device: 장비 정보
-            inspection_mode: 점검 명령어 실행 여부
-            backup_mode: 백업 명령어 실행 여부
-            
-        Returns:
-            Tuple[Dict, Dict]: (장비 정보, 점검/백업 결과)
-        """
+        custom_commands: list[str] | None = None
+    ) -> tuple[dict, dict]:
+        """장비에 연결하고 명령어를 실행합니다."""
         retry_count = 0
         last_error = None
         self._print_cli_status(f"[{device['ip']}] 연결 테스트 시작 (TCP {device['port']})")
         
-        # TCP 연결 테스트 수행
         if not self._test_tcping(device['ip'], device['port']):
-            self.logger.error(f"TCP 연결 테스트 실패 ({device['ip']}:{device['port']})")
+            self.logger.error("TCP 연결 테스트 실패 (%s:%s)", device['ip'], device['port'])
             self._print_cli_status(f"[{device['ip']}] TCP 연결 테스트 실패")
             return device, {"error": "TCP 연결 테스트 실패"}
         self._print_cli_status(f"[{device['ip']}] TCP 연결 확인 완료")
         
-        # 세션 로그 파일 생성
         session_log_filename = f"{device['ip']}_{device['vendor']}_{device['os']}"
         if session_log_suffix:
             session_log_filename = f"{session_log_filename}_{session_log_suffix}"
@@ -449,14 +416,12 @@ class NetworkInspector:
         
         while retry_count < self.max_retries:
             try:
-                # 세션 로그 시작
                 with open(session_log_file, 'a', encoding='utf-8') as log:
                     log.write(f"\n{'='*50}\n")
                     log.write(f"연결 시도 {retry_count + 1} - {datetime.now()}\n")
                     log.write(f"장비: {device['ip']} ({device['vendor']} {device['os']})\n")
                     log.write(f"{'='*50}\n\n")
 
-                # 커스텀 핸들러 사용 시도
                 custom_handler = get_custom_handler(device, self.timeout, session_log_file)
                 if not custom_handler and is_custom_rule_pair(device.get("vendor", ""), device.get("os", "")):
                     if device.get("connection_type", "").lower() == "ssh":
@@ -470,13 +435,12 @@ class NetworkInspector:
                         )
                     else:
                         self.logger.warning(
-                            f"커스텀 벤더/OS는 SSH만 Paramiko 공용 핸들러를 사용합니다: "
-                            f"{device.get('vendor')} {device.get('os')} ({device.get('connection_type')})"
+                            "커스텀 벤더/OS는 SSH만 Paramiko 공용 핸들러를 사용합니다: %s %s (%s)",
+                            device.get('vendor'), device.get('os'), device.get('connection_type')
                         )
                 if custom_handler:
-                    self.logger.debug(f"커스텀 핸들러 사용: {device['vendor']} {device['os']}")
+                    self.logger.debug("커스텀 핸들러 사용: %s %s", device['vendor'], device['os'])
                     try:
-                        # 연결 및 특권 모드 진입
                         self._print_cli_status(f"[{device['ip']}] 커스텀 핸들러 연결 시작")
                         custom_handler.connect()
                         custom_handler.enable()
@@ -484,9 +448,7 @@ class NetworkInspector:
                         
                         inspection_results = {}
                         
-                        # 점검 모드일 경우 점검 명령어 실행
                         if inspection_mode:
-                            # 점검 명령어 실행
                             commands = self._get_device_commands(
                                 device['vendor'],
                                 device['os']
@@ -495,11 +457,9 @@ class NetworkInspector:
                             
                             for idx, cmd in enumerate(commands, start=1):
                                 try:
-                                    # 명령어 실행
                                     self._print_cli_status(f"[{device['ip']}] 점검 명령 실행 {idx}/{len(commands)}: {cmd}")
                                     output = custom_handler.send_command(cmd)
                                     
-                                    # 결과 파싱
                                     parsed = self._parse_command_output(
                                         device['vendor'],
                                         device['os'],
@@ -508,10 +468,9 @@ class NetworkInspector:
                                     )
                                     inspection_results.update(parsed)
                                 except Exception as e:
-                                    self.logger.error(f"명령어 실행 실패 ({cmd} - {device['ip']}): {str(e)}")
+                                    self.logger.error("명령어 실행 실패 (%s - %s): %s", cmd, device['ip'], e)
                                     inspection_results[f"error_{cmd}"] = str(e)
                         
-                        # 사용자 명령어 파일 실행
                         if custom_commands:
                             self._print_cli_status(f"[{device['ip']}] 사용자 명령 {len(custom_commands)}개 실행 시작")
                             for idx, cmd in enumerate(custom_commands, start=1):
@@ -521,48 +480,42 @@ class NetworkInspector:
                                     )
                                     custom_handler.send_command(cmd)
                                 except Exception as e:
-                                    self.logger.error(f"사용자 명령 실행 실패 ({cmd} - {device['ip']}): {str(e)}")
+                                    self.logger.error("사용자 명령 실행 실패 (%s - %s): %s", cmd, device['ip'], e)
                                     return device, {"error": f"사용자 명령 실행 실패: {str(e)}"}
 
-                        # 백업 모드일 경우에만 백업 명령어 실행
                         if backup_mode:
-                            # 설정 백업
                             backup_cmd = self._get_backup_command(
                                 device['vendor'],
                                 device['os']
                             )
                             if backup_cmd:
                                 try:
-                                    # 백업 명령어 실행
                                     self._print_cli_status(f"[{device['ip']}] 백업 명령 실행: {backup_cmd}")
                                     backup_output = custom_handler.send_command(backup_cmd, timeout=10)
                                     
-                                    # 백업 파일 저장
                                     backup_filename = os.path.join(
                                         self.backup_dir,
                                         f"{device['ip']}_{device['vendor']}_{device['os']}.txt"
                                     )
                                     with open(backup_filename, 'w', encoding='utf-8') as f:
                                         f.write(backup_output)
-                                    self.logger.info(f"백업 파일 저장 완료: {backup_filename}")
+                                    self.logger.info("백업 파일 저장 완료: %s", backup_filename)
                                     self._print_cli_status(f"[{device['ip']}] 백업 파일 저장 완료: {backup_filename}")
                                     inspection_results["backup_file"] = backup_filename
                                 except Exception as e:
-                                    self.logger.error(f"백업 실패 ({device['ip']}): {str(e)}")
+                                    self.logger.error("백업 실패 (%s): %s", device['ip'], e)
                                     inspection_results["backup_error"] = str(e)
                         
-                        # 연결 종료
                         custom_handler.disconnect()
                         
                         if custom_commands:
                             inspection_results["custom_commands_executed"] = len(custom_commands)
                         return device, inspection_results
                     except Exception as e:
-                        self.logger.error(f"커스텀 핸들러 실행 실패 ({device['ip']}): {str(e)}")
+                        self.logger.error("커스텀 핸들러 실행 실패 (%s): %s", device['ip'], e)
                         retry_count += 1
                         last_error = e
                         
-                        # 실패 로그 기록
                         with open(session_log_file, 'a', encoding='utf-8') as log:
                             log.write(f"\n{'='*50}\n")
                             log.write(f"커스텀 핸들러 실행 실패 ({retry_count}) - {datetime.now()}\n")
@@ -570,12 +523,11 @@ class NetworkInspector:
                             log.write(f"{'='*50}\n\n")
                         
                         if retry_count < self.max_retries:
-                            time.sleep(2 ** retry_count)  # 지수 백오프
+                            time.sleep(2 ** retry_count)
                             continue
                         else:
                             return device, {"error": f"커스텀 핸들러 실행 실패: {str(e)}"}
-                else: # Netmiko
-                    # 장비 타입 설정
+                else:
                     vendor_key = str(device['vendor']).lower()
                     os_key = str(device['os']).lower()
                     override_map = CONNECTION_OVERRIDES.get(vendor_key, {}).get(os_key, {})
@@ -596,7 +548,7 @@ class NetworkInspector:
                         device_type = override_device_type
                     elif device['connection_type'].lower() == 'telnet':
                         device_type = f"{vendor_key}_{os_key}_telnet"
-                    else: # ssh
+                    else:
                         device_type = f"{vendor_key}_{os_key}"
                     
                     if device['vendor'].lower() == 'juniper':
@@ -607,12 +559,11 @@ class NetworkInspector:
                             from netmiko.ssh_dispatcher import CLASS_MAPPER
                             if device_type not in CLASS_MAPPER:
                                 self.logger.warning(
-                                    f"Netmiko device_type 미지원 가능성: {device_type} (custom override)"
+                                    "Netmiko device_type 미지원 가능성: %s (custom override)", device_type
                                 )
                         except Exception:
                             pass
 
-                    # 일반 장비 접속 (Netmiko 사용)
                     safe_device = {
                         'ip': str(device['ip']),
                         'vendor': str(device['vendor']),
@@ -645,7 +596,7 @@ class NetworkInspector:
                                 if not conn.check_enable_mode():
                                     enable_secret = safe_device.get('enable_password') or safe_device.get('password')
                                     self.logger.warning(
-                                        f"enable 모드 미진입 감지: {device['ip']} ({device_type})"
+                                        "enable 모드 미진입 감지: %s (%s)", device['ip'], device_type
                                     )
                                     if enable_secret:
                                         output = conn.send_command_timing("enable")
@@ -653,11 +604,11 @@ class NetworkInspector:
                                             conn.send_command_timing(enable_secret)
                                     if not conn.check_enable_mode():
                                         self.logger.warning(
-                                            f"enable 모드 진입 실패: {device['ip']} ({device_type})"
+                                            "enable 모드 진입 실패: %s (%s)", device['ip'], device_type
                                         )
                             except Exception as e:
                                 self.logger.warning(
-                                    f"enable 모드 확인/재시도 실패: {device['ip']} ({device_type}) - {e}"
+                                    "enable 모드 확인/재시도 실패: %s (%s) - %s", device['ip'], device_type, e
                                 )
                             if not (device['vendor'].lower() == 'axgate' and device['os'].lower() == 'axgate'):
                                 conn.send_command_timing('terminal length 0')
@@ -697,15 +648,15 @@ class NetworkInspector:
                     except Exception as e:
                         last_error = e
                         retry_count += 1
-                        self.logger.warning(f"Netmiko 연결 시도 {retry_count} 실패 ({device['ip']}): {str(e)}")
+                        self.logger.warning("Netmiko 연결 시도 %d 실패 (%s): %s", retry_count, device['ip'], e)
                         if retry_count >= self.max_retries:
                             return device, {"error": f"Netmiko 연결 실패: {str(e)}"}
-                        time.sleep(2 ** retry_count)  # 지수 백오프
+                        time.sleep(2 ** retry_count)
                         continue
             except Exception as e:
                 last_error = e
                 retry_count += 1
-                self.logger.warning(f"연결 시도 {retry_count} 실패 ({device['ip']}): {str(e)}")
+                self.logger.warning("연결 시도 %d 실패 (%s): %s", retry_count, device['ip'], e)
                 
                 with open(session_log_file, 'a', encoding='utf-8') as log:
                     log.write(f"\n{'='*50}\n")
@@ -719,7 +670,7 @@ class NetworkInspector:
                 else:
                     return device, {"error": f"최종 연결 실패: {str(e)}"}
     
-    def load_devices(self, devices: List[Dict]):
+    def load_devices(self, devices: list[dict]):
         for idx, device in enumerate(devices, start=1):
             device['device_index'] = idx
         self.devices = devices
@@ -756,7 +707,7 @@ class NetworkInspector:
         fail_count = 0
         self._print_cli_status(f"총 장비 수: {total_devices}대")
         
-        with ThreadPoolExecutor(max_workers=10) as executor:
+        with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
             future_to_device = {}
             for device in self.devices:
                 if backup_only:
@@ -775,7 +726,7 @@ class NetworkInspector:
                     if result.get('status') == 'error':
                         status_message = f"실패 - 오류: {result.get('error_message', '알 수 없는 오류')}"
                 except Exception as e:
-                    self.logger.error(f"장비 처리 중 오류 발생: {device['ip']} - {str(e)}")
+                    self.logger.error("장비 처리 중 오류 발생: %s - %s", device['ip'], e)
                     with self.results_lock:
                         self.results.append({
                             'ip': device['ip'],
@@ -792,14 +743,14 @@ class NetworkInspector:
                     else:
                         fail_count += 1
                     progress = self._format_progress_bar(completed_devices, total_devices)
-                    self.logger.info(f"진행 상황: {progress} | IP: {device['ip']} | 상태: {status_message}")
+                    self.logger.info("진행 상황: %s | IP: %s | 상태: %s", progress, device['ip'], status_message)
                     self._print_cli_status(
                         f"진행: {progress} | IP: {device['ip']} | 상태: {status_message} | 성공 {success_count} / 실패 {fail_count}"
                     )
         
-        # 장비 정보 순서대로 결과 정렬
-        device_order = {device['ip']: i for i, device in enumerate(self.devices)}
-        self.results.sort(key=lambda r: device_order.get(r.get('ip'), float('inf')))
+        with self.results_lock:
+            device_order = {device['ip']: i for i, device in enumerate(self.devices)}
+            self.results.sort(key=lambda r: device_order.get(r.get('ip'), float('inf')))
         
         if backup_only:
             self.logger.info("장비 백업 완료")
@@ -808,7 +759,7 @@ class NetworkInspector:
             self.logger.info("장비 점검 완료")
             self._print_cli_status(f"장비 점검 완료 (성공 {success_count} / 실패 {fail_count})")
 
-    def run_custom_commands(self, commands: List[str]):
+    def run_custom_commands(self, commands: list[str]):
         """사용자 명령어 목록을 장비에 순차 실행합니다."""
         self.logger.info("사용자 명령 실행 시작")
         self._print_cli_status("사용자 명령 실행을 시작합니다.")
@@ -819,7 +770,7 @@ class NetworkInspector:
         fail_count = 0
         self._print_cli_status(f"총 장비 수: {total_devices}대")
 
-        with ThreadPoolExecutor(max_workers=10) as executor:
+        with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
             future_to_device = {}
             for device in self.devices:
                 future = executor.submit(self._run_custom_commands_device, device, commands)
@@ -835,7 +786,7 @@ class NetworkInspector:
                     if result.get('status') == 'error':
                         status_message = f"실패 - 오류: {result.get('error_message', '알 수 없는 오류')}"
                 except Exception as e:
-                    self.logger.error(f"장비 처리 중 오류 발생: {device['ip']} - {str(e)}")
+                    self.logger.error("장비 처리 중 오류 발생: %s - %s", device['ip'], e)
                     with self.results_lock:
                         self.results.append({
                             'ip': device['ip'],
@@ -852,13 +803,14 @@ class NetworkInspector:
                     else:
                         fail_count += 1
                     progress = self._format_progress_bar(completed_devices, total_devices)
-                    self.logger.info(f"진행 상황: {progress} | IP: {device['ip']} | 상태: {status_message}")
+                    self.logger.info("진행 상황: %s | IP: %s | 상태: %s", progress, device['ip'], status_message)
                     self._print_cli_status(
                         f"진행: {progress} | IP: {device['ip']} | 상태: {status_message} | 성공 {success_count} / 실패 {fail_count}"
                     )
 
-        device_order = {device['ip']: i for i, device in enumerate(self.devices)}
-        self.results.sort(key=lambda r: device_order.get(r.get('ip'), float('inf')))
+        with self.results_lock:
+            device_order = {device['ip']: i for i, device in enumerate(self.devices)}
+            self.results.sort(key=lambda r: device_order.get(r.get('ip'), float('inf')))
 
         self.logger.info("사용자 명령 실행 완료")
         self._print_cli_status(f"사용자 명령 실행 완료 (성공 {success_count} / 실패 {fail_count})")
@@ -873,10 +825,9 @@ class NetworkInspector:
         fail_count = 0
         self._print_cli_status(f"총 장비 수: {total_devices}대")
         
-        with ThreadPoolExecutor(max_workers=10) as executor:
+        with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
             future_to_device = {}
             for device in self.devices:
-                # 점검과 백업을 장비별로 분리하여 병렬 수행합니다
                 if self._should_use_parallel_for_device(device):
                     future = executor.submit(self._inspect_and_backup_device_parallel, device)
                 else:
@@ -893,7 +844,7 @@ class NetworkInspector:
                     if result.get('status') == 'error':
                         status_message = f"실패 - 오류: {result.get('error_message', '알 수 없는 오류')}"
                 except Exception as e:
-                    self.logger.error(f"장비 처리 중 오류 발생: {device['ip']} - {str(e)}")
+                    self.logger.error("장비 처리 중 오류 발생: %s - %s", device['ip'], e)
                     with self.results_lock:
                         self.results.append({
                             'ip': device['ip'],
@@ -910,21 +861,21 @@ class NetworkInspector:
                     else:
                         fail_count += 1
                     progress = self._format_progress_bar(completed_devices, total_devices)
-                    self.logger.info(f"진행 상황: {progress} | IP: {device['ip']} | 상태: {status_message}")
+                    self.logger.info("진행 상황: %s | IP: %s | 상태: %s", progress, device['ip'], status_message)
                     self._print_cli_status(
                         f"진행: {progress} | IP: {device['ip']} | 상태: {status_message} | 성공 {success_count} / 실패 {fail_count}"
                     )
         
-        # 장비 정보 순서대로 결과 정렬
-        device_order = {device['ip']: i for i, device in enumerate(self.devices)}
-        self.results.sort(key=lambda r: device_order.get(r.get('ip'), float('inf')))
+        with self.results_lock:
+            device_order = {device['ip']: i for i, device in enumerate(self.devices)}
+            self.results.sort(key=lambda r: device_order.get(r.get('ip'), float('inf')))
         
         self.logger.info("장비 점검 및 백업 완료")
         self._print_cli_status(f"장비 점검 및 백업 완료 (성공 {success_count} / 실패 {fail_count})")
 
-    def _inspect_and_backup_device(self, device: Dict) -> Dict:
+    def _inspect_and_backup_device(self, device: dict) -> dict:
         """단일 장비를 점검하고 백업합니다."""
-        self.logger.info(f"장비 점검 및 백업 시작: {device['ip']}")
+        self.logger.info("장비 점검 및 백업 시작: %s", device['ip'])
         self._print_cli_status(f"[{device['ip']}] 점검+백업 시작")
         result = {
             'ip': device['ip'],
@@ -937,37 +888,33 @@ class NetworkInspector:
         }
         
         try:
-            # 장비 연결 및 명령어 실행 (점검과 백업 모두 활성화)
             device, connection_results = self._connect_to_device(device, inspection_mode=True, backup_mode=True)
             
-            # 오류 확인
             if 'error' in connection_results:
                 result['status'] = 'error'
                 result['error_message'] = connection_results['error']
                 return result
                 
-            # 점검 결과 저장
             result['inspection_results'] = connection_results
             
-            # 백업 파일명 정보 확인
             if 'backup_file' in connection_results:
                 result['backup_file'] = connection_results['backup_file']
             
-            self.logger.info(f"장비 점검 및 백업 완료: {device['ip']}")
+            self.logger.info("장비 점검 및 백업 완료: %s", device['ip'])
             self._print_cli_status(f"[{device['ip']}] 점검+백업 완료")
             return result
 
         except Exception as e:
-            self.logger.error(f"장비 점검 및 백업 중 오류 발생: {device['ip']} - {str(e)}")
+            self.logger.error("장비 점검 및 백업 중 오류 발생: %s - %s", device['ip'], e)
             result['status'] = 'error'
             result['error_message'] = str(e)
             return result
 
-    def _inspect_and_backup_device_parallel(self, device: Dict) -> Dict:
+    def _inspect_and_backup_device_parallel(self, device: dict) -> dict:
         """단일 장비를 점검/백업 스레드로 병렬 수행합니다."""
         device_index = device.get('device_index', 'NA')
         threading.current_thread().name = f"Device-{device_index}"
-        self.logger.info(f"장비 점검 및 백업(병렬) 시작: {device['ip']}")
+        self.logger.info("장비 점검 및 백업(병렬) 시작: %s", device['ip'])
         self._print_cli_status(f"[{device['ip']}] 점검+백업 병렬 시작")
         result = {
             'ip': device['ip'],
@@ -1001,21 +948,21 @@ class NetworkInspector:
             result['inspection_results'] = inspection_result.get('inspection_results', {})
             result['backup_file'] = backup_result.get('backup_file', '')
 
-            self.logger.info(f"장비 점검 및 백업(병렬) 완료: {device['ip']}")
+            self.logger.info("장비 점검 및 백업(병렬) 완료: %s", device['ip'])
             self._print_cli_status(f"[{device['ip']}] 점검+백업 병렬 완료")
             return result
 
         except Exception as e:
-            self.logger.error(f"장비 점검 및 백업(병렬) 중 오류 발생: {device['ip']} - {str(e)}")
+            self.logger.error("장비 점검 및 백업(병렬) 중 오류 발생: %s - %s", device['ip'], e)
             result['status'] = 'error'
             result['error_message'] = str(e)
             return result
 
-    def _inspect_device(self, device: Dict, session_log_suffix: str | None = None) -> Dict:
+    def _inspect_device(self, device: dict, session_log_suffix: str | None = None) -> dict:
         """단일 장비를 점검합니다."""
         device_index = device.get('device_index', 'NA')
         threading.current_thread().name = f"Device-{device_index}:Inspect"
-        self.logger.info(f"장비 점검 시작: {device['ip']}")
+        self.logger.info("장비 점검 시작: %s", device['ip'])
         self._print_cli_status(f"[{device['ip']}] 점검 시작")
         result = {
             'ip': device['ip'],
@@ -1027,7 +974,6 @@ class NetworkInspector:
         }
         
         try:
-            # 장비 연결 및 명령어 실행 (점검만 활성화)
             device, inspection_results = self._connect_to_device(
                 device,
                 inspection_mode=True,
@@ -1035,35 +981,33 @@ class NetworkInspector:
                 session_log_suffix=session_log_suffix
             )
             
-            # 오류 확인
             if 'error' in inspection_results:
                 result['status'] = 'error'
                 result['error_message'] = inspection_results['error']
                 return result
                 
-            # 검사 결과 저장
             result['inspection_results'] = inspection_results
             
-            self.logger.info(f"장비 점검 완료: {device['ip']}")
+            self.logger.info("장비 점검 완료: %s", device['ip'])
             self._print_cli_status(f"[{device['ip']}] 점검 완료")
             return result
 
         except Exception as e:
-            self.logger.error(f"장비 점검 중 오류 발생: {device['ip']} - {str(e)}")
+            self.logger.error("장비 점검 중 오류 발생: %s - %s", device['ip'], e)
             result['status'] = 'error'
             result['error_message'] = str(e)
             return result
 
     def _run_custom_commands_device(
         self,
-        device: Dict,
-        commands: List[str],
+        device: dict,
+        commands: list[str],
         session_log_suffix: str | None = None
-    ) -> Dict:
+    ) -> dict:
         """단일 장비에 사용자 명령어를 실행합니다."""
         device_index = device.get('device_index', 'NA')
         threading.current_thread().name = f"Device-{device_index}:Cmds"
-        self.logger.info(f"사용자 명령 실행 시작: {device['ip']}")
+        self.logger.info("사용자 명령 실행 시작: %s", device['ip'])
         self._print_cli_status(f"[{device['ip']}] 사용자 명령 실행 시작")
         result = {
             'ip': device['ip'],
@@ -1087,21 +1031,21 @@ class NetworkInspector:
                 result['error_message'] = command_results['error']
                 return result
 
-            self.logger.info(f"사용자 명령 실행 완료: {device['ip']}")
+            self.logger.info("사용자 명령 실행 완료: %s", device['ip'])
             self._print_cli_status(f"[{device['ip']}] 사용자 명령 실행 완료")
             return result
 
         except Exception as e:
-            self.logger.error(f"사용자 명령 실행 중 오류 발생: {device['ip']} - {str(e)}")
+            self.logger.error("사용자 명령 실행 중 오류 발생: %s - %s", device['ip'], e)
             result['status'] = 'error'
             result['error_message'] = str(e)
             return result
 
-    def _backup_device(self, device: Dict, session_log_suffix: str | None = None) -> Dict:
+    def _backup_device(self, device: dict, session_log_suffix: str | None = None) -> dict:
         """단일 장비를 백업합니다."""
         device_index = device.get('device_index', 'NA')
         threading.current_thread().name = f"Device-{device_index}:Backup"
-        self.logger.info(f"장비 백업 시작: {device['ip']}")
+        self.logger.info("장비 백업 시작: %s", device['ip'])
         self._print_cli_status(f"[{device['ip']}] 백업 시작")
         result = {
             'ip': device['ip'],
@@ -1113,7 +1057,6 @@ class NetworkInspector:
         }
         
         try:
-            # 장비 연결 (백업만 활성화)
             device, connection_results = self._connect_to_device(
                 device,
                 inspection_mode=False,
@@ -1121,28 +1064,25 @@ class NetworkInspector:
                 session_log_suffix=session_log_suffix
             )
             
-            # 오류 확인
             if 'error' in connection_results:
                 result['status'] = 'error'
                 result['error_message'] = connection_results['error']
                 return result
             
-            # 백업 관련 오류 확인
             if 'backup_error' in connection_results:
                 result['status'] = 'error'
                 result['error_message'] = connection_results['backup_error']
                 return result
                 
-            # 백업 파일명 정보 확인
             if 'backup_file' in connection_results:
                 result['backup_file'] = connection_results['backup_file']
             
-            self.logger.info(f"장비 백업 완료: {device['ip']}")
+            self.logger.info("장비 백업 완료: %s", device['ip'])
             self._print_cli_status(f"[{device['ip']}] 백업 완료")
             return result
 
         except Exception as e:
-            self.logger.error(f"장비 백업 중 오류 발생: {device['ip']} - {str(e)}")
+            self.logger.error("장비 백업 중 오류 발생: %s - %s", device['ip'], e)
             result['status'] = 'error'
             result['error_message'] = str(e)
-            return result 
+            return result

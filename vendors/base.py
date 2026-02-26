@@ -23,9 +23,9 @@ def register_handler(vendor, os_name, conn_type):
     def decorator(cls):
         key = (vendor.lower(), os_name.lower(), conn_type.lower())
         if key in HANDLER_REGISTRY:
-            logger.warning(f"핸들러 키 중복: {key}가 이미 등록되어 있습니다. 기존 핸들러를 덮어씁니다.")
+            logger.warning("핸들러 키 중복: %s가 이미 등록되어 있습니다. 기존 핸들러를 덮어씁니다.", key)
         HANDLER_REGISTRY[key] = cls
-        logger.debug(f"핸들러 등록: {key} -> {cls.__name__}")
+        logger.debug("핸들러 등록: %s -> %s", key, cls.__name__)
         return cls
     return decorator
 
@@ -111,7 +111,7 @@ class GenericParamikoHandler(CustomDeviceHandler):
         if self.device.get("connection_type", "").lower() != "ssh":
             raise ValueError("GenericParamikoHandler는 SSH 연결만 지원합니다")
 
-        self.logger.debug(f"GenericParamiko SSH 접속 시작: {self.device.get('ip')}")
+        self.logger.debug("GenericParamiko SSH 접속 시작: %s", self.device.get('ip'))
         try:
             self.ssh = paramiko.SSHClient()
             self.ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
@@ -144,7 +144,7 @@ class GenericParamikoHandler(CustomDeviceHandler):
                 raise ConnectionError("프롬프트를 찾을 수 없습니다.")
             return True
         except Exception as e:
-            self.logger.error(f"GenericParamiko SSH 접속 실패: {e}")
+            self.logger.error("GenericParamiko SSH 접속 실패: %s", e)
             if self.ssh:
                 self.ssh.close()
             raise
@@ -286,15 +286,15 @@ def get_custom_handler(device, timeout=10, session_log_file=None):
     handler_class = HANDLER_REGISTRY.get(key)
     
     if handler_class:
-        logger.debug(f"핸들러 찾음: {key} -> {handler_class.__name__}")
+        logger.debug("핸들러 찾음: %s -> %s", key, handler_class.__name__)
         return handler_class(device, timeout, session_log_file)
     
     # 레거시 cisco 핸들러 같이 특정 os가 아닌 경우도 찾아보기
     key_generic_os = (vendor, '*', connection_type)
     handler_class = HANDLER_REGISTRY.get(key_generic_os)
     if handler_class:
-        logger.debug(f"핸들러 찾음 (Generic OS): {key_generic_os} -> {handler_class.__name__}")
+        logger.debug("핸들러 찾음 (Generic OS): %s -> %s", key_generic_os, handler_class.__name__)
         return handler_class(device, timeout, session_log_file)
         
-    logger.debug(f"커스텀 핸들러를 찾을 수 없음: {key}")
+    logger.debug("커스텀 핸들러를 찾을 수 없음: %s", key)
     return None 

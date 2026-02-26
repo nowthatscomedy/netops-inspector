@@ -1,7 +1,6 @@
 import ipaddress
 import pandas as pd
 import logging
-from typing import Tuple
 
 from vendors import INSPECTION_COMMANDS
 from .custom_exceptions import ValidationError
@@ -28,7 +27,7 @@ def _validate_connection_type(connection_type: str) -> bool:
     """접속 방식을 검증합니다."""
     return str(connection_type).lower() in ['ssh', 'telnet']
 
-def validate_device_info(device: dict) -> Tuple[bool, str]:
+def validate_device_info(device: dict) -> tuple[bool, str]:
     """단일 장비 정보의 유효성을 검사합니다."""
     required_fields = ['ip', 'vendor', 'os', 'connection_type', 'port', 'password']
     for field in required_fields:
@@ -65,7 +64,7 @@ def validate_dataframe(df: pd.DataFrame):
     if df.empty:
         raise ValidationError("엑셀 파일이 비어있습니다.")
     
-    # 컬럼 이름을 소문자로 통일
+    df = df.copy()
     df.columns = [str(col).lower() for col in df.columns]
 
     missing_columns = [col for col in required_columns if col not in df.columns]

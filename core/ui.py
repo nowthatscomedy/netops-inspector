@@ -22,16 +22,19 @@ def get_filepath_from_dialog() -> Optional[str]:
     root = tk.Tk()
     root.withdraw()
 
-    filepath = filedialog.askopenfilename(
-        title="점검할 엑셀 파일을 선택하세요",
-        filetypes=(("Excel files", "*.xlsx *.xls"), ("All files", "*.*"))
-    )
-    
-    if filepath and not (filepath.endswith('.xlsx') or filepath.endswith('.xls')):
-        messagebox.showerror("잘못된 파일 형식", "엑셀 파일(.xlsx, .xls)을 선택해주세요.")
-        return None
+    try:
+        filepath = filedialog.askopenfilename(
+            title="점검할 엑셀 파일을 선택하세요",
+            filetypes=(("Excel files", "*.xlsx *.xls"), ("All files", "*.*"))
+        )
         
-    return filepath if filepath else None
+        if filepath and not (filepath.endswith('.xlsx') or filepath.endswith('.xls')):
+            messagebox.showerror("잘못된 파일 형식", "엑셀 파일(.xlsx, .xls)을 선택해주세요.")
+            return None
+            
+        return filepath if filepath else None
+    finally:
+        root.destroy()
 
 def get_password_from_dialog() -> Optional[str]:
     """
@@ -45,9 +48,12 @@ def get_password_from_dialog() -> Optional[str]:
     root = tk.Tk()
     root.withdraw()
     
-    password = simpledialog.askstring(
-        "암호 입력",
-        "파일에 암호가 설정되어 있는 경우, 암호를 입력하세요.",
-        show='*'
-    )
-    return password 
+    try:
+        password = simpledialog.askstring(
+            "암호 입력",
+            "파일에 암호가 설정되어 있는 경우, 암호를 입력하세요.",
+            show='*'
+        )
+        return password
+    finally:
+        root.destroy() 
