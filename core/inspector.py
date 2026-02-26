@@ -24,6 +24,7 @@ from vendors import (
     HANDLER_OVERRIDES,
     is_custom_rule_pair
 )
+from vendors.base import HANDLER_REGISTRY
 
 class NetworkInspector:
     def __init__(
@@ -75,6 +76,9 @@ class NetworkInspector:
         if not vendor_key or not os_key:
             return True
         if CONNECTION_OVERRIDES.get(vendor_key, {}).get(os_key):
+            return False
+        conn_type = str(device.get("connection_type", "")).strip().lower()
+        if (vendor_key, os_key, conn_type) in HANDLER_REGISTRY or (vendor_key, '*', conn_type) in HANDLER_REGISTRY:
             return False
         return True
 
