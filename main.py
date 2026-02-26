@@ -6,7 +6,7 @@ from zipfile import BadZipFile
 from core.inspector import NetworkInspector
 from core.file_handler import read_excel_file, save_results_to_excel, read_command_file
 from core.validator import validate_dataframe
-from core.ui import get_password_from_dialog
+from core.ui import get_password_from_cli
 from core.custom_exceptions import NetworkInspectorError
 from core.logging_config import init_logging
 from core.settings import load_settings
@@ -59,7 +59,7 @@ def main():
                     try:
                         devices_df = read_excel_file(filepath)
                     except (BadZipFile, Exception):
-                        password = get_password_from_dialog()
+                        password = get_password_from_cli()
                         if not password:
                             logger.warning("암호가 입력되지 않았습니다.")
                             continue
@@ -170,7 +170,7 @@ def main():
                 try:
                     devices_df = read_excel_file(filepath)
                 except (BadZipFile, Exception):
-                    password = get_password_from_dialog()
+                    password = get_password_from_cli()
                     if not password:
                         logger.warning("암호가 입력되지 않았습니다.")
                         continue
