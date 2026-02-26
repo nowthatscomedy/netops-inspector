@@ -43,6 +43,9 @@ logs/
 settings.json
 custom_rules.json
 NetworkInspector.spec
+NetworkDeviceInspector.spec
+.tmp_NDIC/
+results/
 
 # Logs
 *.log
