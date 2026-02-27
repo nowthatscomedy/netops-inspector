@@ -1,6 +1,7 @@
 # vendors/__init__.py
 
 import os
+import sys
 import json
 import importlib
 import pkgutil
@@ -9,6 +10,8 @@ from collections import defaultdict
 from pathlib import Path
 
 import yaml
+
+from core.path_utils import get_app_dir
 
 logger = logging.getLogger(__name__)
 
@@ -40,17 +43,33 @@ HANDLER_OVERRIDES = defaultdict(dict)
 # custom_rules에서 정의된 벤더/OS 목록
 CUSTOM_RULE_PAIRS: set[tuple[str, str]] = set()
 
+_VENDOR_MODULE_NAMES = [
+    "alcatel_lucent", "aruba", "axgate", "cisco", "dayou",
+    "handreamnet", "juniper", "nexg", "piolink", "ruckus", "ubiquoss",
+]
+
+
+def _discover_vendor_names() -> list[str]:
+    """벤더 모듈 이름 목록을 반환합니다. frozen 모드에서도 동작합니다."""
+    if getattr(sys, "frozen", False):
+        return list(_VENDOR_MODULE_NAMES)
+
+    pkg_path = os.path.dirname(__file__)
+    names: list[str] = []
+    for _, name, _ in pkgutil.iter_modules([pkg_path]):
+        if name not in ("base", "__init__"):
+            names.append(name)
+    return names or list(_VENDOR_MODULE_NAMES)
+
+
 def _load_vendor_modules():
     """
     vendors 패키지 내의 모든 모듈을 동적으로 임포트하고,
     각 모듈의 명령어, 파싱 규칙, 커스텀 파서 함수를 자동으로 로드합니다.
     """
-    pkg_path = os.path.dirname(__file__)
-    pkg_name = os.path.basename(pkg_path)
+    pkg_name = "vendors"
 
-    for _, name, _ in pkgutil.iter_modules([pkg_path]):
-        if name in ['base']:  # 기본 모듈 등은 건너뛰기
-            continue
+    for name in _discover_vendor_names():
         try:
             module = importlib.import_module(f'.{name}', pkg_name)
             
@@ -246,9 +265,9 @@ def _merge_connection_overrides(custom_rules: dict) -> None:
                 CONNECTION_OVERRIDES[vendor][os_name] = mapped
 
 def _load_custom_rules() -> None:
-    project_root = Path(__file__).resolve().parents[1]
-    yaml_path = project_root / "custom_rules.yaml"
-    json_path = project_root / "custom_rules.json"
+    app_dir = get_app_dir()
+    yaml_path = app_dir / "custom_rules.yaml"
+    json_path = app_dir / "custom_rules.json"
 
     data: dict | None = None
 

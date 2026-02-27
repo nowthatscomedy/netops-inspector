@@ -310,23 +310,30 @@ network-device-inspection-1/
 
 ## EXE 빌드 (PyInstaller)
 
+### 간편 빌드 (권장)
 ```powershell
-pyinstaller --onefile --name "NetworkInspector" `
-  --hidden-import "vendors.alcatel_lucent" `
-  --hidden-import "vendors.axgate" `
-  --hidden-import "vendors.cisco" `
-  --hidden-import "vendors.dayou" `
-  --hidden-import "vendors.handreamnet" `
-  --hidden-import "vendors.juniper" `
-  --hidden-import "vendors.nexg" `
-  --hidden-import "vendors.piolink" `
-  --hidden-import "vendors.ruckus" `
-  --hidden-import "vendors.ubiquoss" `
-  --hidden-import "prompt_toolkit" `
-  main.py
+build.bat
 ```
 
-> `InquirerPy`는 `prompt_toolkit`에 의존하므로 `--hidden-import "prompt_toolkit"`이 필요할 수 있습니다.
+### 수동 빌드
+```powershell
+pip install pyinstaller
+pyinstaller NetworkDeviceInspector.spec --noconfirm
+```
+
+### 배포 구조
+빌드 결과물 `dist/NetworkDeviceInspector.exe`와 함께 아래 파일을 같은 폴더에 배치합니다:
+
+```
+배포 폴더/
+├── NetworkDeviceInspector.exe   # 필수
+├── settings.yaml                # 선택 (없으면 자동 생성)
+├── custom_rules.yaml            # 선택 (커스텀 규칙 사용 시)
+└── custom_rules.example.yaml    # 참고용
+```
+
+> Python이 설치되지 않은 PC에서도 exe 파일만으로 실행할 수 있습니다.  
+> 실행 시 `results/`, `backup/`, `logs/`, `session_logs/` 디렉토리가 exe 위치 기준으로 자동 생성됩니다.
 
 ## 라이선스
 

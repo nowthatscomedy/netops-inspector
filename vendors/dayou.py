@@ -109,12 +109,12 @@ DAYOU_PARSING_RULES = {
             },
             'show cpu': {
                 'pattern': r'one minute:\s*(\d+%)',
-                'output_column': 'CPU Usage %',
+                'output_column': 'CPU Usage',
                 'first_match_only': True
             },
             'show memory static | include total': {
                 'custom_parser': 'parsing_dayou_memory_usage',
-                'output_column': 'Memory Usage %'
+                'output_column': 'Memory Usage'
             },
             'show poe power': {
                 'custom_parser': 'parsing_dayou_poe_count',

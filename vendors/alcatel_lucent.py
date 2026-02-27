@@ -259,11 +259,11 @@ ALCATEL_LUCENT_PARSING_RULES = {
             },
             'show health all cpu': {
                 'custom_parser': 'parsing_alcatel_cpu',
-                'output_column': 'CPU Usage %'
+                'output_column': 'CPU Usage'
             },
             'show health all memory': {
                 'custom_parser': 'parsing_alcatel_memory',
-                'output_column': 'Memory Usage %'
+                'output_column': 'Memory Usage'
             },
             'show chassis': {
                 'patterns': [
@@ -317,11 +317,11 @@ ALCATEL_LUCENT_PARSING_RULES = {
             },
             'show health all cpu': {
                 'custom_parser': 'parsing_alcatel_cpu',
-                'output_column': 'CPU Usage %'
+                'output_column': 'CPU Usage'
             },
             'show health all memory': {
                 'custom_parser': 'parsing_alcatel_memory',
-                'output_column': 'Memory Usage %'
+                'output_column': 'Memory Usage'
             },
             'show chassis': {
                 'patterns': [

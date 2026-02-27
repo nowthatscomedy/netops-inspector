@@ -76,11 +76,30 @@ ARUBA_PARSING_RULES = {
     "aruba": {
         "aruba_os": {
             "show running-config": {
-                "custom_parser": "parsing_aruba_hostname",
-                "output_column": "Hostname",
+                "patterns": [
+                    {
+                        "custom_parser": "parsing_aruba_hostname",
+                        "output_column": "Hostname",
+                    },
+                    {
+                        "pattern": r";\s*(\w+)\s+Configuration Editor",
+                        "output_column": "Model",
+                        "first_match_only": True,
+                    },
+                ],
             },
             "show system information": {
                 "patterns": [
+                    {
+                        "pattern": r"Software revision\s*:\s*(\S+)",
+                        "output_column": "Version",
+                        "first_match_only": True,
+                    },
+                    {
+                        "pattern": r"Serial Number\s*:\s*(\S+)",
+                        "output_column": "Serial Number",
+                        "first_match_only": True,
+                    },
                     {
                         "custom_parser": "parsing_aruba_uptime",
                         "output_column": "Uptime",

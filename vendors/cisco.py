@@ -101,7 +101,7 @@ CISCO_PARSING_RULES = {
             },
             'show process cpu | include CPU utilization': {
                 'pattern': r'CPU utilization for five seconds:\s+(\d+)%/\d+%;',
-                'output_column': 'CPU Usage %',
+                'output_column': 'CPU Usage',
                 'first_match_only': True
             },
             'show process memory | include Processor Pool': {

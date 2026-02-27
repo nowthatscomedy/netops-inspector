@@ -67,7 +67,7 @@ def parsing_ruckus_memory(output: str) -> dict:
         results['Memory Total'] = f"{total} bytes"
         results['Memory Used'] = f"{used} bytes"
         results['Memory Free'] = f"{free} bytes"
-        results['Memory Usage %'] = f"{used_percent}%"
+        results['Memory Usage'] = f"{used_percent}%"
     return results
 
 # Ruckus 장비 점검 명령어 정의
@@ -116,7 +116,7 @@ RUCKUS_PARSING_RULES = {
             },
             'show cpu-utilization': {
                 'custom_parser': 'parsing_ruckus_cpu',
-                'output_column': 'CPU Usage %'
+                'output_column': 'CPU Usage'
             },
             'show memory': {
                 'custom_parser': 'parsing_ruckus_memory',

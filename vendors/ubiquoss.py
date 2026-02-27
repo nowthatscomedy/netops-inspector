@@ -126,7 +126,7 @@ UBIQUOSS_PARSING_RULES = {
             },
             'show cpu usage': {
                 'custom_parser': 'parsing_ubiquoss_cpu_usage',
-                'output_column': 'CPU Usage %'
+                'output_column': 'CPU Usage'
             },
             'show memory usage': { # 명령어 키 및 파싱 규칙 변경
                 'patterns': [
@@ -138,7 +138,7 @@ UBIQUOSS_PARSING_RULES = {
                         'process': { # Memory Usage % 계산 추가
                             'type': 'calculate_usage_from_available',
                             'input_column': 'Memory Available %', # 이 값을 사용
-                            'output_column': 'Memory Usage %'
+                            'output_column': 'Memory Usage'
                         }
                     }
                 ]

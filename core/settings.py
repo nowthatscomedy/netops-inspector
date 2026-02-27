@@ -5,6 +5,8 @@ from typing import Dict, List
 
 import yaml
 
+from core.path_utils import get_app_dir
+
 
 @dataclass
 class AppSettings:
@@ -16,8 +18,7 @@ class AppSettings:
 
 
 def get_settings_path() -> Path:
-    project_root = Path(__file__).resolve().parents[1]
-    return project_root / "settings.yaml"
+    return get_app_dir() / "settings.yaml"
 
 
 def _normalize_excludes(raw: object) -> Dict[str, Dict[str, List[str]]]:

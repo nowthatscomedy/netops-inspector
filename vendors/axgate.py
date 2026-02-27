@@ -100,7 +100,7 @@ AXGATE_PARSING_RULES = {
                         'process': {
                             'type': 'percentage',
                             'inputs': ['CPU Used', 'CPU Total'],
-                            'output_column': 'CPU Usage %'
+                            'output_column': 'CPU Usage'
                         }
                     }
                 ]
@@ -114,7 +114,7 @@ AXGATE_PARSING_RULES = {
                         'process': {
                             'type': 'percentage',
                             'inputs': ['Memory Used', 'Memory Total'],
-                            'output_column': 'Memory Usage %'
+                            'output_column': 'Memory Usage'
                         }
                     }
                 ]

@@ -151,7 +151,7 @@ PIOLINK_PARSING_RULES = {
                 'patterns': [
                     {
                         'pattern': r'CPU Usage\s+:\s+(.*)',
-                        'output_column': 'CPU Usage %'
+                        'output_column': 'CPU Usage'
                     },
                     {
                         'pattern': r'Total Memory:\s+(.*)',
@@ -167,7 +167,7 @@ PIOLINK_PARSING_RULES = {
                     },
                     {
                         'pattern': r'Memory Usage:\s+(.*)',
-                        'output_column': 'Memory Usage %'
+                        'output_column': 'Memory Usage'
                     }
                 ]
             },
