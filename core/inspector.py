@@ -11,6 +11,7 @@ from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import sys
 
+from core.settings import canonicalize_column_name, make_profile_key
 from vendors import (
     INSPECTION_COMMANDS,
     BACKUP_COMMANDS,
@@ -33,6 +34,7 @@ class NetworkInspector:
         max_retries: int = 3,
         timeout: int = 10,
         max_workers: int = 10,
+        column_aliases: dict[str, str] | None = None,
         status_callback: Callable[[dict[str, object]], None] | None = None,
     ):
         file_name, file_ext = os.path.splitext(output_excel)
@@ -64,9 +66,34 @@ class NetworkInspector:
         self.cli_lock = threading.Lock()
         self.inspection_excludes = inspection_excludes or {}
         self.reconnect_cooldown = 0.5
+        self.column_aliases = dict(column_aliases or {})
         self.status_callback = status_callback
-        
-    
+
+    def _canonicalize_result_columns(self, raw: dict) -> dict:
+        canonical_result: dict = {}
+        for key, value in raw.items():
+            canonical_key = canonicalize_column_name(key, self.column_aliases)
+            if not canonical_key:
+                continue
+
+            if canonical_key not in canonical_result:
+                canonical_result[canonical_key] = value
+                continue
+
+            existing = canonical_result[canonical_key]
+            if existing in (None, "", []):
+                canonical_result[canonical_key] = value
+                continue
+            if value in (None, "", []):
+                continue
+
+            existing_text = str(existing)
+            incoming_text = str(value)
+            if existing_text != incoming_text:
+                canonical_result[canonical_key] = f"{existing_text}, {incoming_text}"
+
+        return canonical_result
+
     def _get_device_commands(self, vendor: str, model: str) -> list[str]:
         """장비별 점검 명령어를 가져옵니다."""
         try:
@@ -261,7 +288,7 @@ class NetworkInspector:
                 filtered[key] = value
             result = filtered
 
-        return result
+        return self._canonicalize_result_columns(result)
 
     def _get_parse_ids_for_command(self, vendor: str, model: str, command: str) -> set[str]:
         rules = PARSING_RULES.get(vendor, {}).get(model, {}).get(command, {})
@@ -363,11 +390,26 @@ class NetworkInspector:
                     parse_id = f"{cmd}::{col}"
                     if cmd in excludes or parse_id in excludes:
                         continue
-                    if col not in seen:
-                        seen.add(col)
-                        ordered_columns.append(col)
+                    canonical_col = canonicalize_column_name(col, self.column_aliases)
+                    if canonical_col and canonical_col not in seen:
+                        seen.add(canonical_col)
+                        ordered_columns.append(canonical_col)
 
         return ordered_columns
+
+    def get_device_profile_keys(self, devices: list[dict] | None = None) -> list[str]:
+        source = devices if devices is not None else self.devices
+        profiles: list[str] = []
+        seen: set[str] = set()
+
+        for device in source:
+            profile_key = make_profile_key(device.get("vendor", ""), device.get("os", ""))
+            if not profile_key or profile_key in seen:
+                continue
+            seen.add(profile_key)
+            profiles.append(profile_key)
+
+        return profiles
     
     def _test_tcping(self, ip: str, port: int, timeout: int = 5) -> bool:
         """TCP 연결 테스트를 수행합니다."""

@@ -15,13 +15,12 @@ from core.ui import get_password_from_cli
 from core.tui_dashboard import TuiDashboard
 from core.custom_exceptions import NetworkInspectorError
 from core.logging_config import init_logging
-from core.settings import load_settings, AppSettings
+from core.settings import load_settings, AppSettings, resolve_inspection_column_order
 from core.menu import (
     show_main_menu,
     show_action_menu,
     show_settings_menu,
     show_netmiko_device_types,
-    reorder_columns_interactive,
     ask_yes_no,
 )
 from core.cli_input import get_filepath_from_cli, get_command_filepath_from_cli
@@ -69,6 +68,7 @@ def _create_inspector(
         max_retries=settings.max_retries,
         timeout=settings.timeout,
         max_workers=settings.max_workers,
+        column_aliases=settings.column_aliases,
         status_callback=status_callback,
     )
 
@@ -206,7 +206,11 @@ def _run_custom_commands(settings: AppSettings) -> None:
         dashboard.stop()
 
     if inspector.results:
-        save_results_to_excel(inspector.results, inspector.output_excel)
+        save_results_to_excel(
+            inspector.results,
+            inspector.output_excel,
+            column_aliases=settings.column_aliases,
+        )
 
     _print_result_summary(inspector, log_file)
 
@@ -259,16 +263,21 @@ def _run_inspection_backup(settings: AppSettings) -> None:
 
     column_order = None
     if choice in ("1", "3"):
-        if ask_yes_no("점검 결과 열 순서를 정할까요?"):
-            available_columns = inspector.get_available_inspection_columns(inspector.devices)
-            if available_columns:
-                reordered = reorder_columns_interactive(available_columns)
-                if reordered is None:
-                    logger.info("작업이 취소되었습니다.")
-                    return
-                column_order = reordered
-            else:
-                logger.info("정렬할 점검 항목이 없습니다.")
+        available_columns = inspector.get_available_inspection_columns(inspector.devices)
+        if available_columns:
+            profile_keys = inspector.get_device_profile_keys(inspector.devices)
+            column_order = resolve_inspection_column_order(
+                available_columns,
+                profile_keys,
+                settings,
+            )
+            logger.info(
+                "COLUMN ORDER APPLIED | profiles=%s | columns=%s",
+                profile_keys,
+                column_order,
+            )
+        else:
+            logger.info("정렬할 점검 항목이 없습니다.")
 
     _print_run_summary(mode_label, len(devices), filepath, settings, run_timestamp, log_file)
     if not ask_yes_no("실행할까요?", default=True):
@@ -292,6 +301,7 @@ def _run_inspection_backup(settings: AppSettings) -> None:
             inspector.results,
             inspector.output_excel,
             column_order=column_order,
+            column_aliases=settings.column_aliases,
         )
 
     _print_result_summary(inspector, log_file)

@@ -5,6 +5,8 @@ import os
 from pathlib import Path
 from openpyxl.styles import PatternFill
 
+from core.settings import canonicalize_column_name
+
 try:
     import msoffcrypto
 except ImportError:
@@ -74,7 +76,8 @@ def read_excel_file(filepath: str, password: str = None) -> pd.DataFrame:
 def save_results_to_excel(
     results: list,
     output_filepath: str,
-    column_order: list[str] | None = None
+    column_order: list[str] | None = None,
+    column_aliases: dict[str, str] | None = None,
 ):
     """결과를 엑셀 파일에 저장하고, 실패한 항목에 서식을 적용합니다."""
     try:
@@ -84,6 +87,7 @@ def save_results_to_excel(
         if output_dir:
             os.makedirs(output_dir, exist_ok=True)
         
+        aliases = dict(column_aliases or {})
         processed_results = []
         for res in results:
             row = {
@@ -96,7 +100,14 @@ def save_results_to_excel(
             if res.get('inspection_results'):
                 for key, value in res['inspection_results'].items():
                     if not key.startswith('error_') and key not in ['error', 'backup_error', 'backup_file']:
-                        row[key] = value
+                        canonical_key = canonicalize_column_name(key, aliases)
+                        if not canonical_key:
+                            continue
+                        if canonical_key in row and row[canonical_key] not in (None, "") and value not in (None, ""):
+                            if str(row[canonical_key]) != str(value):
+                                row[canonical_key] = f"{row[canonical_key]}, {value}"
+                        else:
+                            row[canonical_key] = value
             
             processed_results.append(row)
 
