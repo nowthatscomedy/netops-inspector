@@ -338,3 +338,11 @@ pyinstaller NetworkDeviceInspector.spec --noconfirm
 ## 라이선스
 
 MIT License. 자세한 내용은 `LICENSE` 참고.
+## 테스트
+
+자동 검증은 `pytest` 기반으로 구성되어 있습니다. 네트워크 장비 연결은 mock 처리되어 실제 장비 없이 실행할 수 있습니다.
+
+```bash
+pip install -r requirements.txt
+python -m pytest
+```
