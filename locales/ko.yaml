@@ -1,0 +1,11 @@
+app:
+  title: "NetOps Inspector"
+
+main:
+  shutdown: "프로그램을 종료합니다."
+  prompts:
+    return_main_menu: "Enter를 누르면 메인 메뉴로 돌아갑니다."
+
+menu:
+  prompts:
+    press_enter_back: "Enter를 누르면 돌아갑니다."

@@ -1,24 +1,24 @@
-# 네트워크 장비 점검 및 백업 자동화 도구
+﻿# ?ㅽ듃?뚰겕 ?λ퉬 ?먭? 諛?諛깆뾽 ?먮룞???꾧뎄
 
-엑셀로 관리하는 장비 목록을 읽어 SSH/Telnet으로 접속하고, 점검 결과와 설정 백업을 자동으로 생성하는 Python 도구입니다.
+?묒?濡?愿由ы븯???λ퉬 紐⑸줉???쎌뼱 SSH/Telnet?쇰줈 ?묒냽?섍퀬, ?먭? 寃곌낵? ?ㅼ젙 諛깆뾽???먮룞?쇰줈 ?앹꽦?섎뒗 Python ?꾧뎄?낅땲??
 
-## 핵심 기능
+## ?듭떖 湲곕뒫
 
-- 벤더 모듈 자동 로딩 및 확장 (`vendors/`에 모듈 추가)
-- 점검/백업 모드 선택 실행 (점검만, 백업만, 둘 다)
-- 엑셀 기반 장비 관리, 암호화된 엑셀 파일 지원
-- 사용자 명령 파일 실행 (TXT/엑셀 명령 목록)
-- SSH/Telnet 지원, 장비별 커스텀 핸들러 등록
-- 병렬 처리(최대 10대), 점검/백업 분리 진행률 표시 및 세션 로그 분리
-- 작업 중 실시간 TUI 대시보드(장비 진행률, 성공/실패 카운트, 최근 이벤트)
-- TCP 연결 사전 테스트 및 재시도/백오프
-- 결과 엑셀 리포트 생성 및 실패 항목 하이라이트
-- 콘솔 로그 레벨 및 점검 제외 항목 설정
-- 입력 데이터 유효성 검증 (IP/포트/벤더/OS/중복)
+- 踰ㅻ뜑 紐⑤뱢 ?먮룞 濡쒕뵫 諛??뺤옣 (`vendors/`??紐⑤뱢 異붽?)
+- ?먭?/諛깆뾽 紐⑤뱶 ?좏깮 ?ㅽ뻾 (?먭?留? 諛깆뾽留? ????
+- ?묒? 湲곕컲 ?λ퉬 愿由? ?뷀샇?붾맂 ?묒? ?뚯씪 吏??
+- ?ъ슜??紐낅졊 ?뚯씪 ?ㅽ뻾 (TXT/?묒? 紐낅졊 紐⑸줉)
+- SSH/Telnet 吏?? ?λ퉬蹂?而ㅼ뒪? ?몃뱾???깅줉
+- 蹂묐젹 泥섎━(理쒕? 10?), ?먭?/諛깆뾽 遺꾨━ 吏꾪뻾瑜??쒖떆 諛??몄뀡 濡쒓렇 遺꾨━
+- ?묒뾽 以??ㅼ떆媛?TUI ??쒕낫???λ퉬 吏꾪뻾瑜? ?깃났/?ㅽ뙣 移댁슫?? 理쒓렐 ?대깽??
+- TCP ?곌껐 ?ъ쟾 ?뚯뒪??諛??ъ떆??諛깆삤??
+- 寃곌낵 ?묒? 由ы룷???앹꽦 諛??ㅽ뙣 ??ぉ ?섏씠?쇱씠??
+- 肄섏넄 濡쒓렇 ?덈꺼 諛??먭? ?쒖쇅 ??ぉ ?ㅼ젙
+- ?낅젰 ?곗씠???좏슚??寃利?(IP/?ы듃/踰ㅻ뜑/OS/以묐났)
 
-## 지원 장비
+## 吏???λ퉬
 
-| 벤더 (Vendor) | 운영체제 (OS) |
+| 踰ㅻ뜑 (Vendor) | ?댁쁺泥댁젣 (OS) |
 | :--- | :--- |
 | `alcatel-lucent` | `aos6`, `aos8` |
 | `axgate` | `axgate` |
@@ -31,96 +31,96 @@
 | `ruckus` | `icx` |
 | `ubiquoss` | `e4020` |
 
-## 빠른 시작
+## 鍮좊Ⅸ ?쒖옉
 
-### 요구사항
-- Windows 환경 (일부 기능에 `msvcrt` 사용)
+### ?붽뎄?ы빆
+- Windows ?섍꼍 (?쇰? 湲곕뒫??`msvcrt` ?ъ슜)
 - Python 3.10+
-- CLI 인터페이스: `rich` (출력 포맷팅) + `InquirerPy` (대화형 프롬프트)
+- CLI ?명꽣?섏씠?? `rich` (異쒕젰 ?щ㎎?? + `InquirerPy` (??뷀삎 ?꾨＼?꾪듃)
 
-### 설치
+### ?ㅼ튂
 ```bash
 pip install -r requirements.txt
 ```
 
-## 엑셀 입력 형식
+## ?묒? ?낅젰 ?뺤떇
 
-필수 컬럼:
+?꾩닔 而щ읆:
 - `ip`, `vendor`, `os`, `connection_type`, `port`, `password`
 
-선택 컬럼:
+?좏깮 而щ읆:
 - `username`, `enable_password`
 
-예시:
+?덉떆:
 
 | ip | vendor | os | connection_type | port | username | password | enable_password |
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
 | 192.168.1.1 | cisco | ios | ssh | 22 | admin | cisco123 | class |
 | 10.0.0.5 | ruckus | icx | ssh | 22 | super | sp-pass | |
 
-지원 확장자:
-- 장비 목록: `.xlsx`, `.xls`, `.xlsm`
-- 암호화된 엑셀은 `msoffcrypto-tool` 필요
+吏???뺤옣??
+- ?λ퉬 紐⑸줉: `.xlsx`, `.xls`, `.xlsm`
+- ?뷀샇?붾맂 ?묒?? `msoffcrypto-tool` ?꾩슂
 
-유효성 검증:
-- IP 형식, 포트 범위(1-65535), `ssh/telnet`만 허용
-- 벤더/OS 지원 조합 검증 및 IP 중복 검사
-- 컬럼명은 대소문자 구분 없이 인식
+?좏슚??寃利?
+- IP ?뺤떇, ?ы듃 踰붿쐞(1-65535), `ssh/telnet`留??덉슜
+- 踰ㅻ뜑/OS 吏??議고빀 寃利?諛?IP 以묐났 寃??
+- 而щ읆紐낆? ??뚮Ц??援щ텇 ?놁씠 ?몄떇
 
-## 사용 방법
+## ?ъ슜 諛⑸쾿
 
-1) 실행
+1) ?ㅽ뻾
 ```bash
 python main.py
 ```
 
-2) 메뉴 선택  
-화살표/Enter로 메뉴를 선택합니다. ESC로 뒤로 돌아갈 수 있습니다.
+2) 硫붾돱 ?좏깮  
+?붿궡??Enter濡?硫붾돱瑜??좏깮?⑸땲?? ESC濡??ㅻ줈 ?뚯븘媛????덉뒿?덈떎.
 
-3) 엑셀 파일 경로 입력  
-Tab 자동완성을 지원하며, 암호화된 파일은 암호 입력을 요청합니다.
+3) ?묒? ?뚯씪 寃쎈줈 ?낅젰  
+Tab ?먮룞?꾩꽦??吏?먰븯硫? ?뷀샇?붾맂 ?뚯씪? ?뷀샇 ?낅젰???붿껌?⑸땲??
 
-4) 실행 요약 확인  
-실행 전 장비 수, 모드, 설정값 등을 요약 패널로 표시하고 확인을 요청합니다.
+4) ?ㅽ뻾 ?붿빟 ?뺤씤  
+?ㅽ뻾 ???λ퉬 ?? 紐⑤뱶, ?ㅼ젙媛??깆쓣 ?붿빟 ?⑤꼸濡??쒖떆?섍퀬 ?뺤씤???붿껌?⑸땲??
 
-5) (점검 포함 시) 결과 열 순서 설정  
-작업 실행 전에 열 순서를 정할지 묻습니다.  
-`y`를 선택하면 점검 항목 목록에서 Enter로 이동 모드를 전환하여 순서를 변경합니다.
+5) (?먭? ?ы븿 ?? 寃곌낵 ???쒖꽌 ?ㅼ젙  
+?묒뾽 ?ㅽ뻾 ?꾩뿉 ???쒖꽌瑜??뺥븷吏 臾살뒿?덈떎.  
+`y`瑜??좏깮?섎㈃ ?먭? ??ぉ 紐⑸줉?먯꽌 Enter濡??대룞 紐⑤뱶瑜??꾪솚?섏뿬 ?쒖꽌瑜?蹂寃쏀빀?덈떎.
 
-6) 작업 실행 중 실시간 대시보드 확인  
-실행이 시작되면 터미널에 실시간 대시보드가 표시되며, 완료 후 요약 화면으로 전환됩니다.
+6) ?묒뾽 ?ㅽ뻾 以??ㅼ떆媛???쒕낫???뺤씤  
+?ㅽ뻾???쒖옉?섎㈃ ?곕??먯뿉 ?ㅼ떆媛???쒕낫?쒓? ?쒖떆?섎ŉ, ?꾨즺 ???붿빟 ?붾㈃?쇰줈 ?꾪솚?⑸땲??
 
-7) 작업 완료 후 메인 메뉴로 자동 복귀  
-여러 작업을 연속으로 실행할 수 있습니다.
+7) ?묒뾽 ?꾨즺 ??硫붿씤 硫붾돱濡??먮룞 蹂듦?  
+?щ윭 ?묒뾽???곗냽?쇰줈 ?ㅽ뻾?????덉뒿?덈떎.
 
-## 사용자 명령 파일 실행
+## ?ъ슜??紐낅졊 ?뚯씪 ?ㅽ뻾
 
-메인 메뉴에서 "사용자 명령 파일 실행"을 선택하면 장비에 임의 명령을 일괄 실행할 수 있습니다.
+硫붿씤 硫붾돱?먯꽌 "?ъ슜??紐낅졊 ?뚯씪 ?ㅽ뻾"???좏깮?섎㈃ ?λ퉬???꾩쓽 紐낅졊???쇨큵 ?ㅽ뻾?????덉뒿?덈떎.
 
-- 텍스트 파일: 한 줄에 한 명령
-- 엑셀 파일: 첫 번째 컬럼에 명령을 한 줄씩 입력
-- 공백/빈 행은 무시됩니다.
-- 여러 벤더/OS가 섞인 경우 경고가 표시됩니다.
+- ?띿뒪???뚯씪: ??以꾩뿉 ??紐낅졊
+- ?묒? ?뚯씪: 泥?踰덉㎏ 而щ읆??紐낅졊????以꾩뵫 ?낅젰
+- 怨듬갚/鍮??됱? 臾댁떆?⑸땲??
+- ?щ윭 踰ㅻ뜑/OS媛 ?욎씤 寃쎌슦 寃쎄퀬媛 ?쒖떆?⑸땲??
 
-## 사용자 커스텀 규칙 (명령어/파싱 추가)
+## ?ъ슜??而ㅼ뒪? 洹쒖튃 (紐낅졊???뚯떛 異붽?)
 
-일반 사용자가 코드 수정 없이 명령어/파싱을 확장할 수 있도록 `custom_rules.yaml`을 지원합니다.  
-(하위 호환: `custom_rules.json`도 읽을 수 있으며, YAML 파일이 우선됩니다.)
+?쇰컲 ?ъ슜?먭? 肄붾뱶 ?섏젙 ?놁씠 紐낅졊???뚯떛???뺤옣?????덈룄濡?`custom_rules.yaml`??吏?먰빀?덈떎.  
+(?섏쐞 ?명솚: `custom_rules.json`???쎌쓣 ???덉쑝硫? YAML ?뚯씪???곗꽑?⑸땲??)
 
-1) `custom_rules.example.yaml`을 복사해 `custom_rules.yaml`로 저장  
-2) `inspection_commands`, `backup_commands`, `parsing_rules`를 필요에 맞게 수정  
-3) 장비 목록의 `vendor`, `os` 값과 동일하게 입력
+1) `custom_rules.example.yaml`??蹂듭궗??`custom_rules.yaml`濡???? 
+2) `inspection_commands`, `backup_commands`, `parsing_rules`瑜??꾩슂??留욊쾶 ?섏젙  
+3) ?λ퉬 紐⑸줉??`vendor`, `os` 媛믨낵 ?숈씪?섍쾶 ?낅젰
 
-규칙 병합 동작:
-- 점검 명령어: 기존 목록 뒤에 **중복 없이 추가**
-- 백업 명령어: 동일 벤더/OS가 있으면 **사용자 규칙으로 덮어씀**
-- 파싱 규칙: 동일 벤더/OS/명령어가 있으면 **사용자 규칙으로 덮어씀**
-- 연결 매핑: 동일 벤더/OS가 있으면 **사용자 규칙으로 덮어씀**
-- 핸들러 설정: 동일 벤더/OS가 있으면 **사용자 규칙으로 덮어씀**
+洹쒖튃 蹂묓빀 ?숈옉:
+- ?먭? 紐낅졊?? 湲곗〈 紐⑸줉 ?ㅼ뿉 **以묐났 ?놁씠 異붽?**
+- 諛깆뾽 紐낅졊?? ?숈씪 踰ㅻ뜑/OS媛 ?덉쑝硫?**?ъ슜??洹쒖튃?쇰줈 ??뼱?**
+- ?뚯떛 洹쒖튃: ?숈씪 踰ㅻ뜑/OS/紐낅졊?닿? ?덉쑝硫?**?ъ슜??洹쒖튃?쇰줈 ??뼱?**
+- ?곌껐 留ㅽ븨: ?숈씪 踰ㅻ뜑/OS媛 ?덉쑝硫?**?ъ슜??洹쒖튃?쇰줈 ??뼱?**
+- ?몃뱾???ㅼ젙: ?숈씪 踰ㅻ뜑/OS媛 ?덉쑝硫?**?ъ슜??洹쒖튃?쇰줈 ??뼱?**
 
-예시:
+?덉떆:
 ```yaml
-# 점검 명령어
+# ?먭? 紐낅졊??
 inspection_commands:
   cisco:
     ios:
@@ -130,12 +130,12 @@ inspection_commands:
       - "show version"
       - "show system"
 
-# 백업 명령어
+# 諛깆뾽 紐낅졊??
 backup_commands:
   user-custom:
     custom-os: "show running-config"
 
-# 파싱 규칙 (싱글쿼트 안에서는 이중 이스케이프 불필요)
+# ?뚯떛 洹쒖튃 (?깃?荑쇳듃 ?덉뿉?쒕뒗 ?댁쨷 ?댁뒪耳?댄봽 遺덊븘??
 parsing_rules:
   cisco:
     ios:
@@ -158,14 +158,14 @@ parsing_rules:
             output_column: Uptime
             first_match_only: true
 
-# Netmiko device_type 매핑
+# Netmiko device_type 留ㅽ븨
 connection_overrides:
   user-custom:
     custom-os:
       default: cisco_ios
       telnet: cisco_ios_telnet
 
-# 핸들러 동작 커스터마이징
+# ?몃뱾???숈옉 而ㅼ뒪?곕쭏?댁쭠
 handler_overrides:
   user-custom:
     custom-os:
@@ -182,167 +182,200 @@ handler_overrides:
       skip_enable: false
 ```
 
-정규표현식 파싱 규칙:
-- `pattern`은 기본적으로 **캡처 그룹 1**을 컬럼 값으로 사용
-- `patterns`는 여러 컬럼을 한 명령어에서 추출할 때 사용
-- `first_match_only`가 없으면 모든 매치를 `,`로 합칩니다.
+?뺢퇋?쒗쁽???뚯떛 洹쒖튃:
+- `pattern`? 湲곕낯?곸쑝濡?**罹≪쿂 洹몃９ 1**??而щ읆 媛믪쑝濡??ъ슜
+- `patterns`???щ윭 而щ읆????紐낅졊?댁뿉??異붿텧?????ъ슜
+- `first_match_only`媛 ?놁쑝硫?紐⑤뱺 留ㅼ튂瑜?`,`濡??⑹묩?덈떎.
 
-> **YAML 팁**: 정규식은 싱글쿼트(`'...'`)로 감싸면 이중 이스케이프가 필요 없습니다.  
-> JSON에서 `"hostname\\\\s+(\\\\S+)"`이던 패턴을 YAML에서는 `'hostname\s+(\S+)'`로 쓸 수 있습니다.
+> **YAML ??*: ?뺢퇋?앹? ?깃?荑쇳듃(`'...'`)濡?媛먯떥硫??댁쨷 ?댁뒪耳?댄봽媛 ?꾩슂 ?놁뒿?덈떎.  
+> JSON?먯꽌 `"hostname\\\\s+(\\\\S+)"`?대뜕 ?⑦꽩??YAML?먯꽌??`'hostname\s+(\S+)'`濡??????덉뒿?덈떎.
 
-정규표현식 공식 문서:
-- Python 정규표현식 공식 문서: https://docs.python.org/3/library/re.html
-- 정규표현식 문법 요약(Quick Reference): https://docs.python.org/3/howto/regex.html
+?뺢퇋?쒗쁽??怨듭떇 臾몄꽌:
+- Python ?뺢퇋?쒗쁽??怨듭떇 臾몄꽌: https://docs.python.org/3/library/re.html
+- ?뺢퇋?쒗쁽??臾몃쾿 ?붿빟(Quick Reference): https://docs.python.org/3/howto/regex.html
 
-정규표현식 이해를 돕는 간단 예시:
+?뺢퇋?쒗쁽???댄빐瑜??뺣뒗 媛꾨떒 ?덉떆:
 - `Version\s*[:=]\s*(\S+)`
-  - `Version` 다음에 `:` 또는 `=`이 나오고, 그 뒤 공백을 건너뛴 후 **첫 번째 그룹**에 값을 캡처
+  - `Version` ?ㅼ쓬??`:` ?먮뒗 `=`???섏삤怨? 洹???怨듬갚??嫄대꼫????**泥?踰덉㎏ 洹몃９**??媛믪쓣 罹≪쿂
 - `Hostname\s*[:=]\s*(\S+)`
-  - `Hostname: my-switch`에서 `my-switch`만 추출
+  - `Hostname: my-switch`?먯꽌 `my-switch`留?異붿텧
 - `Uptime\s*[:=]\s*(.*)`
-  - `Uptime: 12 days, 3 hours`에서 전체 문자열을 추출
+  - `Uptime: 12 days, 3 hours`?먯꽌 ?꾩껜 臾몄옄?댁쓣 異붿텧
 
-자주 쓰는 정규표현식 치트시트:
-- `\s` 공백(스페이스, 탭 등)
-- `\S` 공백이 아닌 문자
-- `.*` 임의 문자 0개 이상(최대한 많이)
-- `.+` 임의 문자 1개 이상
-- `(\S+)` 캡처 그룹(파싱 결과로 저장되는 부분)
-- `^` 줄 시작, `$` 줄 끝
+?먯＜ ?곕뒗 ?뺢퇋?쒗쁽??移섑듃?쒗듃:
+- `\s` 怨듬갚(?ㅽ럹?댁뒪, ????
+- `\S` 怨듬갚???꾨땶 臾몄옄
+- `.*` ?꾩쓽 臾몄옄 0媛??댁긽(理쒕???留롮씠)
+- `.+` ?꾩쓽 臾몄옄 1媛??댁긽
+- `(\S+)` 罹≪쿂 洹몃９(?뚯떛 寃곌낵濡???λ릺??遺遺?
+- `^` 以??쒖옉, `$` 以???
 
-커스텀 벤더/OS 사용 방법:
-- 엑셀 장비 목록에서 `vendor: user-custom`, `os: custom-os`처럼 입력하면 됩니다.
-- 커스텀 벤더/OS가 Netmiko에서 인식되지 않으면 `connection_overrides`로 `device_type`을 지정하세요.
-  - `ssh`, `telnet` 키를 별도로 둘 수 있으며, 없으면 `default`/`any`를 사용합니다.
-  - 지정한 `device_type`이 Netmiko에 없으면 경고 로그가 출력됩니다.
-  - 지원 목록은 메인 메뉴의 "Netmiko device_type 목록 보기"에서 확인 가능합니다.
-- 커스텀 벤더/OS는 기본적으로 **Paramiko 공용 핸들러(SSH)**로 연결합니다.
-  - `connection_type`이 `telnet`이면 Paramiko를 사용할 수 없으므로 Netmiko 경로로 시도합니다.
+而ㅼ뒪? 踰ㅻ뜑/OS ?ъ슜 諛⑸쾿:
+- ?묒? ?λ퉬 紐⑸줉?먯꽌 `vendor: user-custom`, `os: custom-os`泥섎읆 ?낅젰?섎㈃ ?⑸땲??
+- 而ㅼ뒪? 踰ㅻ뜑/OS媛 Netmiko?먯꽌 ?몄떇?섏? ?딆쑝硫?`connection_overrides`濡?`device_type`??吏?뺥븯?몄슂.
+  - `ssh`, `telnet` ?ㅻ? 蹂꾨룄濡??????덉쑝硫? ?놁쑝硫?`default`/`any`瑜??ъ슜?⑸땲??
+  - 吏?뺥븳 `device_type`??Netmiko???놁쑝硫?寃쎄퀬 濡쒓렇媛 異쒕젰?⑸땲??
+  - 吏??紐⑸줉? 硫붿씤 硫붾돱??"Netmiko device_type 紐⑸줉 蹂닿린"?먯꽌 ?뺤씤 媛?ν빀?덈떎.
+- 而ㅼ뒪? 踰ㅻ뜑/OS??湲곕낯?곸쑝濡?**Paramiko 怨듭슜 ?몃뱾??SSH)**濡??곌껐?⑸땲??
+  - `connection_type`??`telnet`?대㈃ Paramiko瑜??ъ슜?????놁쑝誘濡?Netmiko 寃쎈줈濡??쒕룄?⑸땲??
 
-핸들러 동작 커스터마이징 (`handler_overrides`):
-- 커스텀 벤더/OS의 Paramiko 공용 핸들러 동작을 세부적으로 조정할 수 있습니다.
-- 필요한 항목만 지정하면 나머지는 기본값이 적용됩니다.
+?몃뱾???숈옉 而ㅼ뒪?곕쭏?댁쭠 (`handler_overrides`):
+- 而ㅼ뒪? 踰ㅻ뜑/OS??Paramiko 怨듭슜 ?몃뱾???숈옉???몃??곸쑝濡?議곗젙?????덉뒿?덈떎.
+- ?꾩슂????ぉ留?吏?뺥븯硫??섎㉧吏??湲곕낯媛믪씠 ?곸슜?⑸땲??
 
-| 키 | 설명 | 기본값 |
+| ??| ?ㅻ챸 | 湲곕낯媛?|
 | :--- | :--- | :--- |
-| `enable_command` | 특권모드 진입 명령어 | `"enable"` |
-| `disable_paging_command` | 페이지네이션 비활성화 명령어 (빈 문자열이면 실행 안함) | `"terminal length 0"` |
-| `prompt_pattern` | 프롬프트 감지 정규식 | `"[>#]\\s*$"` |
-| `initial_delay` | 접속 후 대기 시간 (초) | `1.0` |
-| `command_delay` | 명령어 전송 후 대기 시간 (초) | `2.0` |
-| `read_delay` | 채널 읽기 간격 (초) | `0.2` |
-| `more_pattern` | 페이지네이션 패턴 | `"--More--"` |
-| `more_response` | 페이지네이션 응답 문자 | `" "` |
-| `shell_width` | SSH 셸 가로 크기 | `200` |
-| `shell_height` | SSH 셸 세로 크기 | `1000` |
-| `skip_enable` | enable 과정 전체 건너뛰기 | `false` |
+| `enable_command` | ?밴텒紐⑤뱶 吏꾩엯 紐낅졊??| `"enable"` |
+| `disable_paging_command` | ?섏씠吏?ㅼ씠??鍮꾪솢?깊솕 紐낅졊??(鍮?臾몄옄?댁씠硫??ㅽ뻾 ?덊븿) | `"terminal length 0"` |
+| `prompt_pattern` | ?꾨＼?꾪듃 媛먯? ?뺢퇋??| `"[>#]\\s*$"` |
+| `initial_delay` | ?묒냽 ???湲??쒓컙 (珥? | `1.0` |
+| `command_delay` | 紐낅졊???꾩넚 ???湲??쒓컙 (珥? | `2.0` |
+| `read_delay` | 梨꾨꼸 ?쎄린 媛꾧꺽 (珥? | `0.2` |
+| `more_pattern` | ?섏씠吏?ㅼ씠???⑦꽩 | `"--More--"` |
+| `more_response` | ?섏씠吏?ㅼ씠???묐떟 臾몄옄 | `" "` |
+| `shell_width` | SSH ??媛濡??ш린 | `200` |
+| `shell_height` | SSH ???몃줈 ?ш린 | `1000` |
+| `skip_enable` | enable 怨쇱젙 ?꾩껜 嫄대꼫?곌린 | `false` |
 
-## 결과물
+## 寃곌낵臾?
 
-- 점검 결과: `results/inspection_results_YYYYMMDD_HHMMSS.xlsx`
-- 명령 실행 결과: `results/command_results_YYYYMMDD_HHMMSS.xlsx`
-- 설정 백업: `backup/YYYYMMDD_HHMMSS/[IP]_[vendor]_[os].txt`
-- 실행 로그: `logs/network_inspector_YYYYMMDD_HHMMSS.log`
-- 세션 로그: `session_logs/YYYYMMDD_HHMMSS/[IP]_[vendor]_[os].log`
+- ?먭? 寃곌낵: `results/inspection_results_YYYYMMDD_HHMMSS.xlsx`
+- 紐낅졊 ?ㅽ뻾 寃곌낵: `results/command_results_YYYYMMDD_HHMMSS.xlsx`
+- ?ㅼ젙 諛깆뾽: `backup/YYYYMMDD_HHMMSS/[IP]_[vendor]_[os].txt`
+- ?ㅽ뻾 濡쒓렇: `logs/netops_inspector_YYYYMMDD_HHMMSS.log`
+- ?몄뀡 濡쒓렇: `session_logs/YYYYMMDD_HHMMSS/[IP]_[vendor]_[os].log`
 
-세션 로그에는 연결/명령 실행 결과가 포함되며, 점검/백업 여부와 관계없이 생성됩니다.
+?몄뀡 濡쒓렇?먮뒗 ?곌껐/紐낅졊 ?ㅽ뻾 寃곌낵媛 ?ы븿?섎ŉ, ?먭?/諛깆뾽 ?щ?? 愿怨꾩뾾???앹꽦?⑸땲??
 
-## 연결 및 타임아웃 기본값
+## ?곌껐 諛???꾩븘??湲곕낯媛?
 
-- 연결 타임아웃: 10초, 최대 재시도: 3회 (지수 백오프)
-- TCP 연결 사전 테스트: 5초
-- 명령 읽기 타임아웃: 점검 30초, 백업 60초
-- 병렬 처리: 장비 최대 10대
-- 점검+백업 모드: 점검/백업을 독립 연결로 수행하며, 점검 성공 장비만 백업 대기열에 올라가 병렬 처리됩니다.
+- ?곌껐 ??꾩븘?? 10珥? 理쒕? ?ъ떆?? 3??(吏??諛깆삤??
+- TCP ?곌껐 ?ъ쟾 ?뚯뒪?? 5珥?
+- 紐낅졊 ?쎄린 ??꾩븘?? ?먭? 30珥? 諛깆뾽 60珥?
+- 蹂묐젹 泥섎━: ?λ퉬 理쒕? 10?
+- ?먭?+諛깆뾽 紐⑤뱶: ?먭?/諛깆뾽???낅┰ ?곌껐濡??섑뻾?섎ŉ, ?먭? ?깃났 ?λ퉬留?諛깆뾽 ?湲곗뿴???щ씪媛 蹂묐젹 泥섎━?⑸땲??
 
-## 설정 (settings.yaml)
+## ?ㅼ젙 (settings.yaml)
 
-파일이 없으면 프로젝트 루트에 자동 생성됩니다.  
-(하위 호환: `settings.json`도 읽을 수 있으며, YAML 파일이 우선됩니다.)
+?뚯씪???놁쑝硫??꾨줈?앺듃 猷⑦듃???먮룞 ?앹꽦?⑸땲??  
+(?섏쐞 ?명솚: `settings.json`???쎌쓣 ???덉쑝硫? YAML ?뚯씪???곗꽑?⑸땲??)
 
 - `console_log_level`: `CRITICAL`, `ERROR`, `WARNING`, `INFO`, `DEBUG`
-- `inspection_excludes`: 벤더/OS/파싱 항목 단위 제외 설정  
-  - 값은 `명령어` 또는 `명령어::컬럼명` 형태로 저장됩니다.
-  - 설정 메뉴에서 단계별 모두 포함/제외 지원 (전체/벤더/OS), 변경 시 `y/N` 확인
-- 배너 문구는 `core/menu.py`의 `BANNER_TEXT`에서 변경합니다.
+- `inspection_excludes`: 踰ㅻ뜑/OS/?뚯떛 ??ぉ ?⑥쐞 ?쒖쇅 ?ㅼ젙  
+  - 媛믪? `紐낅졊?? ?먮뒗 `紐낅졊??:而щ읆紐? ?뺥깭濡???λ맗?덈떎.
+  - ?ㅼ젙 硫붾돱?먯꽌 ?④퀎蹂?紐⑤몢 ?ы븿/?쒖쇅 吏??(?꾩껜/踰ㅻ뜑/OS), 蹂寃???`y/N` ?뺤씤
+- 諛곕꼫 臾멸뎄??`core/menu.py`??`BANNER_TEXT`?먯꽌 蹂寃쏀빀?덈떎.
 
-## 프로젝트 구조
+## ?꾨줈?앺듃 援ъ“
 
 ```
-network-device-inspection-1/
-├── main.py
-├── requirements.txt
-├── settings.yaml
-├── custom_rules.yaml
-├── custom_rules.example.yaml
-├── core/
-│   ├── inspector.py
-│   ├── file_handler.py
-│   ├── validator.py
-│   ├── settings.py
-│   ├── logging_config.py
-│   └── ui.py
-├── vendors/
-│   ├── __init__.py
-│   ├── base.py
-│   └── [vendor].py
-├── results/          # 자동 생성
-├── backup/           # 자동 생성
-├── logs/             # 자동 생성
-└── session_logs/     # 자동 생성
+netops-inspector/
+?쒋?? main.py
+?쒋?? requirements.txt
+?쒋?? settings.yaml
+?쒋?? custom_rules.yaml
+?쒋?? custom_rules.example.yaml
+?쒋?? core/
+??  ?쒋?? inspector.py
+??  ?쒋?? file_handler.py
+??  ?쒋?? validator.py
+??  ?쒋?? settings.py
+??  ?쒋?? logging_config.py
+??  ?붴?? ui.py
+?쒋?? vendors/
+??  ?쒋?? __init__.py
+??  ?쒋?? base.py
+??  ?붴?? [vendor].py
+?쒋?? results/          # ?먮룞 ?앹꽦
+?쒋?? backup/           # ?먮룞 ?앹꽦
+?쒋?? logs/             # ?먮룞 ?앹꽦
+?붴?? session_logs/     # ?먮룞 ?앹꽦
 ```
 
-## 신규 벤더 추가
+## ?좉퇋 踰ㅻ뜑 異붽?
 
-1) `vendors/[벤더명].py` 생성  
-2) 아래 딕셔너리 정의  
-   - `[벤더명]_INSPECTION_COMMANDS`
-   - `[벤더명]_BACKUP_COMMANDS`
-   - `[벤더명]_PARSING_RULES`
-3) 필요 시 커스텀 파서 함수 추가 (`parsing_[벤더]_[기능]`)
-4) 로그인/특수 처리 필요 시 `CustomDeviceHandler` 상속 후 `@register_handler` 등록
+1) `vendors/[踰ㅻ뜑紐?.py` ?앹꽦  
+2) ?꾨옒 ?뺤뀛?덈━ ?뺤쓽  
+   - `[踰ㅻ뜑紐?_INSPECTION_COMMANDS`
+   - `[踰ㅻ뜑紐?_BACKUP_COMMANDS`
+   - `[踰ㅻ뜑紐?_PARSING_RULES`
+3) ?꾩슂 ??而ㅼ뒪? ?뚯꽌 ?⑥닔 異붽? (`parsing_[踰ㅻ뜑]_[湲곕뒫]`)
+4) 濡쒓렇???뱀닔 泥섎━ ?꾩슂 ??`CustomDeviceHandler` ?곸냽 ??`@register_handler` ?깅줉
 
-## 로깅
+## 濡쒓퉭
 
-- 파일 로그는 항상 DEBUG 레벨로 저장됩니다.
-- 콘솔 로그 레벨은 `settings.yaml`의 `console_log_level`로 조정합니다.
-- 기본 로그 포맷: `%(asctime)s | [%(threadName)s] | %(levelname)s | %(message)s`
+- ?뚯씪 濡쒓렇????긽 DEBUG ?덈꺼濡???λ맗?덈떎.
+- 肄섏넄 濡쒓렇 ?덈꺼? `settings.yaml`??`console_log_level`濡?議곗젙?⑸땲??
+- 湲곕낯 濡쒓렇 ?щ㎎: `%(asctime)s | [%(threadName)s] | %(levelname)s | %(message)s`
 
-## EXE 빌드 (PyInstaller)
+## EXE 鍮뚮뱶 (PyInstaller)
 
-### 간편 빌드 (권장)
+### 媛꾪렪 鍮뚮뱶 (沅뚯옣)
 ```powershell
 build.bat
 ```
 
-### 수동 빌드
+### ?섎룞 鍮뚮뱶
 ```powershell
 pip install pyinstaller
-pyinstaller NetworkDeviceInspector.spec --noconfirm
+pyinstaller NetOpsInspector.spec --noconfirm
 ```
 
-### 배포 구조
-빌드 결과물 `dist/NetworkDeviceInspector.exe`와 함께 아래 파일을 같은 폴더에 배치합니다:
+### 諛고룷 援ъ“
+鍮뚮뱶 寃곌낵臾?`dist/NetOpsInspector.exe`? ?④퍡 ?꾨옒 ?뚯씪??媛숈? ?대뜑??諛곗튂?⑸땲??
 
 ```
-배포 폴더/
-├── NetworkDeviceInspector.exe   # 필수
-├── settings.yaml                # 선택 (없으면 자동 생성)
-├── custom_rules.yaml            # 선택 (커스텀 규칙 사용 시)
-└── custom_rules.example.yaml    # 참고용
+諛고룷 ?대뜑/
+?쒋?? NetOpsInspector.exe   # ?꾩닔
+?쒋?? settings.yaml                # ?좏깮 (?놁쑝硫??먮룞 ?앹꽦)
+?쒋?? custom_rules.yaml            # ?좏깮 (而ㅼ뒪? 洹쒖튃 ?ъ슜 ??
+?붴?? custom_rules.example.yaml    # 李멸퀬??
 ```
 
-> Python이 설치되지 않은 PC에서도 exe 파일만으로 실행할 수 있습니다.  
-> 실행 시 `results/`, `backup/`, `logs/`, `session_logs/` 디렉토리가 exe 위치 기준으로 자동 생성됩니다.
+> Python???ㅼ튂?섏? ?딆? PC?먯꽌??exe ?뚯씪留뚯쑝濡??ㅽ뻾?????덉뒿?덈떎.  
+> ?ㅽ뻾 ??`results/`, `backup/`, `logs/`, `session_logs/` ?붾젆?좊━媛 exe ?꾩튂 湲곗??쇰줈 ?먮룞 ?앹꽦?⑸땲??
 
-## 라이선스
+## ?쇱씠?좎뒪
 
-MIT License. 자세한 내용은 `LICENSE` 참고.
-## 테스트
+MIT License. ?먯꽭???댁슜? `LICENSE` 李멸퀬.
+## ?뚯뒪??
 
-자동 검증은 `pytest` 기반으로 구성되어 있습니다. 네트워크 장비 연결은 mock 처리되어 실제 장비 없이 실행할 수 있습니다.
+?먮룞 寃利앹? `pytest` 湲곕컲?쇰줈 援ъ꽦?섏뼱 ?덉뒿?덈떎. ?ㅽ듃?뚰겕 ?λ퉬 ?곌껐? mock 泥섎━?섏뼱 ?ㅼ젣 ?λ퉬 ?놁씠 ?ㅽ뻾?????덉뒿?덈떎.
 
 ```bash
 pip install -r requirements.txt
 python -m pytest
 ```
+
+## 다국어(i18n) 지원 (v1)
+
+이제 `settings.yaml`에서 UI/검증/결과 엑셀 라벨 언어를 선택할 수 있습니다.
+
+```yaml
+language: en
+fallback_language: en
+
+# 입력 엑셀 컬럼 별칭 (다국어 헤더 -> 표준 컬럼)
+input_column_aliases:
+  "ip 주소": ip
+  "장비사": vendor
+  "접속방식": connection_type
+```
+
+지원 언어 코드:
+- `ko`, `en`, `ja`, `es`, `pt-BR`, `zh-CN`
+
+현재 번역 파일 제공:
+- `locales/en.yaml`
+- `locales/ko.yaml`
+
+나머지 언어 코드는 `fallback_language`(기본 `en`)로 자동 폴백됩니다.
+
+입력 컬럼 처리 동작:
+- 검증 전 컬럼명을 정규화합니다.
+- 필수 컬럼 표준 키: `ip`, `vendor`, `os`, `connection_type`, `port`, `password`
+- `input_column_aliases`로 국가/언어별 컬럼명을 표준 키에 매핑할 수 있습니다.
+
+결과 엑셀 동작:
+- 기본 컬럼(`접속 상태`, `오류 메시지`)과 상태값(`성공/실패`)은 현재 언어 설정에 따라 표시됩니다.
+

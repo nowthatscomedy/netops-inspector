@@ -4,7 +4,7 @@ import pandas as pd
 import pytest
 
 from core.custom_exceptions import ValidationError
-from core.validator import validate_dataframe, validate_device_info
+from core.validator import normalize_device_dataframe, validate_dataframe, validate_device_info
 
 
 def test_validate_device_info_success(sample_device: dict[str, object]) -> None:
@@ -76,3 +76,51 @@ def test_validate_dataframe_aggregates_row_errors(sample_device: dict[str, objec
     message = str(exc_info.value)
     assert "bad-ip" in message
     assert "http" in message
+
+
+def test_normalize_device_dataframe_applies_input_aliases() -> None:
+    raw = pd.DataFrame(
+        [
+            {
+                "IP Address": "192.0.2.10",
+                "vendor name": "cisco",
+                "os": "ios",
+                "connection type": "ssh",
+                "port": 22,
+                "password": "pw",
+            }
+        ]
+    )
+
+    normalized = normalize_device_dataframe(raw)
+    assert list(normalized.columns) == [
+        "ip",
+        "vendor",
+        "os",
+        "connection_type",
+        "port",
+        "password",
+    ]
+
+
+def test_validate_dataframe_returns_normalized_dataframe(sample_device: dict[str, object]) -> None:
+    raw = pd.DataFrame(
+        [
+            {
+                "IP 주소": "192.0.2.10",
+                "장비사": "cisco",
+                "OS": "ios",
+                "접속방식": "ssh",
+                "Port": 22,
+                "Password": "pw",
+            }
+        ]
+    )
+
+    validated = validate_dataframe(
+        raw,
+        input_column_aliases={"ip 주소": "ip", "장비사": "vendor", "접속방식": "connection_type"},
+    )
+    assert "ip" in validated.columns
+    assert "vendor" in validated.columns
+    assert "connection_type" in validated.columns

@@ -5,6 +5,7 @@ import pytest
 
 import core.file_handler as file_handler_module
 from core.file_handler import read_command_file, read_excel_file, save_results_to_excel
+from core.i18n import set_locale
 
 
 def test_read_command_file_from_txt(tmp_path) -> None:
@@ -57,6 +58,7 @@ def test_read_excel_file_password_requires_msoffcrypto(monkeypatch, tmp_path) ->
 
 
 def test_save_results_to_excel_applies_alias_and_column_order(tmp_path) -> None:
+    set_locale("en", "en")
     output_file = tmp_path / "result.xlsx"
     results = [
         {

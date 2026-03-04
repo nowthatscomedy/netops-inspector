@@ -1,13 +1,15 @@
+from __future__ import annotations
+
 from InquirerPy import inquirer
+
+from core.i18n import t
 
 
 def get_password_from_cli() -> str | None:
-    """암호화된 엑셀 파일의 비밀번호를 입력받습니다."""
     result = inquirer.secret(
-        message="암호화된 파일의 비밀번호:",
+        message=t("ui.encrypted_excel_password"),
         mandatory=False,
     ).execute()
-
     if not result:
         return None
     return result

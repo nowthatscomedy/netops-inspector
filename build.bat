@@ -1,52 +1,53 @@
-@echo off
+﻿@echo off
 chcp 65001 >nul 2>&1
 setlocal
 
 echo ============================================
-echo  NetworkDeviceInspector - EXE 빌드
+echo  NetOpsInspector - EXE 鍮뚮뱶
 echo ============================================
 echo.
 
-:: PyInstaller 설치 확인
+:: PyInstaller ?ㅼ튂 ?뺤씤
 pip show pyinstaller >nul 2>&1
 if errorlevel 1 (
-    echo [INFO] PyInstaller가 설치되어 있지 않습니다. 설치합니다...
+    echo [INFO] PyInstaller媛 ?ㅼ튂?섏뼱 ?덉? ?딆뒿?덈떎. ?ㅼ튂?⑸땲??..
     pip install pyinstaller
     if errorlevel 1 (
-        echo [ERROR] PyInstaller 설치 실패
+        echo [ERROR] PyInstaller ?ㅼ튂 ?ㅽ뙣
         pause
         exit /b 1
     )
 )
 
-:: 이전 빌드 정리
+:: ?댁쟾 鍮뚮뱶 ?뺣━
 if exist "dist" rmdir /s /q "dist"
 if exist "build" rmdir /s /q "build"
 
-echo [1/3] PyInstaller 빌드 시작...
+echo [1/3] PyInstaller 鍮뚮뱶 ?쒖옉...
 echo.
-pyinstaller NetworkDeviceInspector.spec --noconfirm
+pyinstaller NetOpsInspector.spec --noconfirm
 if errorlevel 1 (
     echo.
-    echo [ERROR] 빌드 실패
+    echo [ERROR] 鍮뚮뱶 ?ㅽ뙣
     pause
     exit /b 1
 )
 
 echo.
-echo [2/3] 설정 파일 복사...
+echo [2/3] ?ㅼ젙 ?뚯씪 蹂듭궗...
 if exist "custom_rules.example.yaml" copy /y "custom_rules.example.yaml" "dist\custom_rules.example.yaml" >nul
 
 echo.
-echo [3/3] 빌드 완료!
+echo [3/3] 鍮뚮뱶 ?꾨즺!
 echo.
-echo  출력: dist\NetworkDeviceInspector.exe
+echo  異쒕젰: dist\NetOpsInspector.exe
 echo.
-echo  배포 시 dist 폴더에 아래 파일을 함께 배치하세요:
-echo    - NetworkDeviceInspector.exe  (필수)
-echo    - settings.yaml              (없으면 자동 생성)
-echo    - custom_rules.yaml          (선택 - 커스텀 규칙 사용 시)
-echo    - custom_rules.example.yaml  (참고용)
+echo  諛고룷 ??dist ?대뜑???꾨옒 ?뚯씪???④퍡 諛곗튂?섏꽭??
+echo    - NetOpsInspector.exe  (?꾩닔)
+echo    - settings.yaml              (?놁쑝硫??먮룞 ?앹꽦)
+echo    - custom_rules.yaml          (?좏깮 - 而ㅼ뒪? 洹쒖튃 ?ъ슜 ??
+echo    - custom_rules.example.yaml  (李멸퀬??
 echo.
 
 pause
+

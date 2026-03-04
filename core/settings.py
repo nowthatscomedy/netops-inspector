@@ -1,17 +1,45 @@
+from __future__ import annotations
+
 import json
-from dataclasses import dataclass, asdict, field
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Dict, List, Sequence
 
 import yaml
 
+from core.i18n import DEFAULT_LANGUAGE, normalize_language_code
 from core.path_utils import get_app_dir
+
+REQUIRED_INPUT_COLUMNS: tuple[str, ...] = (
+    "ip",
+    "vendor",
+    "os",
+    "connection_type",
+    "port",
+    "password",
+)
+OPTIONAL_INPUT_COLUMNS: tuple[str, ...] = ("username", "enable_password")
+VALID_INPUT_COLUMNS: set[str] = set(REQUIRED_INPUT_COLUMNS + OPTIONAL_INPUT_COLUMNS)
+
+_DEFAULT_INPUT_COLUMN_ALIASES: Dict[str, str] = {
+    "ip address": "ip",
+    "vendor name": "vendor",
+    "connection type": "connection_type",
+    "enable password": "enable_password",
+    "user name": "username",
+}
 
 
 def _normalize_column_key(value: object) -> str:
     if not isinstance(value, str):
         return ""
     return " ".join(value.strip().lower().split())
+
+
+def _normalize_input_column_target(value: object) -> str:
+    if not isinstance(value, str):
+        return ""
+    return "_".join(value.strip().lower().replace("-", " ").split())
 
 
 def canonicalize_column_name(column: object, aliases: Dict[str, str] | None = None) -> str:
@@ -21,6 +49,30 @@ def canonicalize_column_name(column: object, aliases: Dict[str, str] | None = No
     if not aliases:
         return cleaned
     return aliases.get(_normalize_column_key(cleaned), cleaned)
+
+
+def canonicalize_input_column_name(
+    column: object,
+    aliases: Dict[str, str] | None = None,
+) -> str:
+    cleaned = str(column).strip() if isinstance(column, str) else ""
+    if not cleaned:
+        return ""
+
+    normalized_aliases: Dict[str, str] = {}
+    normalized_aliases.update(_DEFAULT_INPUT_COLUMN_ALIASES)
+    if aliases:
+        normalized_aliases.update(aliases)
+
+    alias_key = _normalize_column_key(cleaned)
+    mapped = normalized_aliases.get(alias_key)
+    if mapped:
+        return mapped
+
+    candidate = _normalize_input_column_target(cleaned)
+    if candidate in VALID_INPUT_COLUMNS:
+        return candidate
+    return candidate
 
 
 def _normalize_profile_part(value: object) -> str:
@@ -65,6 +117,20 @@ def _normalize_column_aliases(raw: object) -> Dict[str, str]:
     return normalized
 
 
+def _normalize_input_column_aliases(raw: object) -> Dict[str, str]:
+    if not isinstance(raw, dict):
+        return {}
+
+    normalized: Dict[str, str] = {}
+    for alias_raw, canonical_raw in raw.items():
+        alias_key = _normalize_column_key(alias_raw)
+        canonical = _normalize_input_column_target(canonical_raw)
+        if not alias_key or canonical not in VALID_INPUT_COLUMNS:
+            continue
+        normalized[alias_key] = canonical
+    return normalized
+
+
 def _normalize_column_order(raw: object, aliases: Dict[str, str]) -> List[str]:
     if not isinstance(raw, list):
         return []
@@ -103,6 +169,9 @@ class AppSettings:
     max_retries: int = 3
     timeout: int = 10
     max_workers: int = 10
+    language: str = DEFAULT_LANGUAGE
+    fallback_language: str = DEFAULT_LANGUAGE
+    input_column_aliases: Dict[str, str] = field(default_factory=dict)
     column_aliases: Dict[str, str] = field(default_factory=dict)
     inspection_column_order_global: List[str] = field(default_factory=list)
     inspection_column_order_by_profile: Dict[str, List[str]] = field(default_factory=dict)
@@ -146,7 +215,7 @@ def _normalize_excludes(raw: object) -> Dict[str, Dict[str, List[str]]]:
 
 
 def _load_settings_data(settings_path: Path) -> dict | None:
-    """YAML 우선, JSON 폴백으로 설정 데이터를 읽습니다."""
+    """Read settings data with YAML first and JSON fallback."""
     if settings_path.exists():
         raw = settings_path.read_text(encoding="utf-8")
         if settings_path.suffix in (".yaml", ".yml"):
@@ -189,6 +258,15 @@ def load_settings() -> AppSettings:
     if not isinstance(max_workers, int) or max_workers < 1:
         max_workers = 10
 
+    language = normalize_language_code(data.get("language"), DEFAULT_LANGUAGE)
+    fallback_language = normalize_language_code(
+        data.get("fallback_language"),
+        DEFAULT_LANGUAGE,
+    )
+
+    input_column_aliases = _normalize_input_column_aliases(
+        data.get("input_column_aliases", {}),
+    )
     column_aliases = _normalize_column_aliases(data.get("column_aliases", {}))
     inspection_column_order_global = _normalize_column_order(
         data.get("inspection_column_order_global", []),
@@ -205,6 +283,9 @@ def load_settings() -> AppSettings:
         max_retries=max_retries,
         timeout=timeout,
         max_workers=max_workers,
+        language=language,
+        fallback_language=fallback_language,
+        input_column_aliases=input_column_aliases,
         column_aliases=column_aliases,
         inspection_column_order_global=inspection_column_order_global,
         inspection_column_order_by_profile=inspection_column_order_by_profile,
@@ -249,15 +330,23 @@ def resolve_inspection_column_order(
 
 def save_settings(settings: AppSettings) -> None:
     aliases = _normalize_column_aliases(settings.column_aliases)
+    input_aliases = _normalize_input_column_aliases(settings.input_column_aliases)
     global_order = _normalize_column_order(settings.inspection_column_order_global, aliases)
     profile_orders = _normalize_profile_orders(settings.inspection_column_order_by_profile, aliases)
 
     normalized_settings = AppSettings(
         console_log_level=str(settings.console_log_level).upper() or "WARNING",
         inspection_excludes=_normalize_excludes(settings.inspection_excludes),
-        max_retries=settings.max_retries if isinstance(settings.max_retries, int) and settings.max_retries > 0 else 3,
+        max_retries=settings.max_retries
+        if isinstance(settings.max_retries, int) and settings.max_retries > 0
+        else 3,
         timeout=settings.timeout if isinstance(settings.timeout, int) and settings.timeout > 0 else 10,
-        max_workers=settings.max_workers if isinstance(settings.max_workers, int) and settings.max_workers > 0 else 10,
+        max_workers=settings.max_workers
+        if isinstance(settings.max_workers, int) and settings.max_workers > 0
+        else 10,
+        language=normalize_language_code(settings.language, DEFAULT_LANGUAGE),
+        fallback_language=normalize_language_code(settings.fallback_language, DEFAULT_LANGUAGE),
+        input_column_aliases=input_aliases,
         column_aliases=aliases,
         inspection_column_order_global=global_order,
         inspection_column_order_by_profile=profile_orders,

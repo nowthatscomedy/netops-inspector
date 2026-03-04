@@ -1,8 +1,12 @@
+from __future__ import annotations
+
 import logging
 from pathlib import Path
 
 from InquirerPy import inquirer
 from InquirerPy.validator import PathValidator
+
+from core.i18n import t
 
 logger = logging.getLogger(__name__)
 
@@ -17,11 +21,10 @@ def _validate_extension(path_str: str, extensions: tuple[str, ...]) -> bool:
 
 
 def get_filepath_from_cli() -> str | None:
-    """CLI에서 엑셀 파일 경로 입력 받기 (Tab 자동완성 내장)"""
     result = inquirer.filepath(
-        message="접속 정보 엑셀 파일 경로:",
-        long_instruction="Tab: 자동완성 / Enter: 확인 / Ctrl+C: 취소",
-        validate=PathValidator(is_file=True, message="유효한 파일 경로를 입력하세요."),
+        message=t("cli.path.excel_message"),
+        long_instruction=t("cli.path.long_instruction"),
+        validate=PathValidator(is_file=True, message=t("cli.path.invalid_path")),
         only_files=True,
         mandatory=False,
     ).execute()
@@ -33,22 +36,26 @@ def get_filepath_from_cli() -> str | None:
     path = Path(cleaned).expanduser()
 
     if not path.exists():
-        logger.warning("입력한 파일을 찾을 수 없습니다: %s", path)
+        logger.warning(t("cli.warning.file_not_found", path=path))
         return None
 
     if path.suffix.lower() not in EXCEL_EXTENSIONS:
-        logger.warning("지원하지 않는 파일 형식입니다 (xlsx/xls/xlsm만 지원): %s", path.suffix)
+        logger.warning(
+            t(
+                "cli.warning.unsupported_excel_extension",
+                suffix=path.suffix,
+            ),
+        )
         return None
 
     return str(path)
 
 
 def get_command_filepath_from_cli() -> str | None:
-    """CLI에서 명령어 파일 경로 입력 받기 (Tab 자동완성 내장)"""
     result = inquirer.filepath(
-        message="명령어 파일 경로 (txt/xlsx):",
-        long_instruction="Tab: 자동완성 / Enter: 확인 / Ctrl+C: 취소",
-        validate=PathValidator(is_file=True, message="유효한 파일 경로를 입력하세요."),
+        message=t("cli.path.command_message"),
+        long_instruction=t("cli.path.long_instruction"),
+        validate=PathValidator(is_file=True, message=t("cli.path.invalid_path")),
         only_files=True,
         mandatory=False,
     ).execute()
@@ -60,11 +67,16 @@ def get_command_filepath_from_cli() -> str | None:
     path = Path(cleaned).expanduser()
 
     if not path.exists():
-        logger.warning("입력한 파일을 찾을 수 없습니다: %s", path)
+        logger.warning(t("cli.warning.file_not_found", path=path))
         return None
 
     if path.suffix.lower() not in COMMAND_EXTENSIONS:
-        logger.warning("지원하지 않는 파일 형식입니다 (txt/xlsx/xls/xlsm만 지원): %s", path.suffix)
+        logger.warning(
+            t(
+                "cli.warning.unsupported_command_extension",
+                suffix=path.suffix,
+            ),
+        )
         return None
 
     return str(path)

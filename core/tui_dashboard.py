@@ -11,9 +11,11 @@ from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
 
+from core.i18n import t
+
 
 class TuiDashboard:
-    """네트워크 작업 진행 상태를 실시간으로 보여주는 TUI 대시보드."""
+    """Render a live dashboard for inspection/backup tasks."""
 
     def __init__(self, mode: str, total_devices: int) -> None:
         self.mode = mode
@@ -37,10 +39,10 @@ class TuiDashboard:
         self._live.start()
         self._attach_log_handler()
 
-    def mark_completed(self, note: str = "작업 완료") -> None:
+    def mark_completed(self, note: str | None = None) -> None:
         with self._lock:
             self._completed = True
-            self.recent_logs.append(note)
+            self.recent_logs.append(note or t("dashboard.default_completed_note"))
             self._refresh()
 
     def stop(self) -> None:
@@ -55,15 +57,16 @@ class TuiDashboard:
         self._log_handler = _DashboardLogHandler(self)
         self._log_handler.setLevel(logging.INFO)
         self._log_handler.setFormatter(
-            logging.Formatter("[%(threadName)s] %(levelname)s | %(message)s")
+            logging.Formatter("[%(threadName)s] %(levelname)s | %(message)s"),
         )
         self._saved_console_handlers = [
-            h for h in root.handlers
-            if isinstance(h, logging.StreamHandler)
-            and not isinstance(h, logging.FileHandler)
+            handler
+            for handler in root.handlers
+            if isinstance(handler, logging.StreamHandler)
+            and not isinstance(handler, logging.FileHandler)
         ]
-        for h in self._saved_console_handlers:
-            root.removeHandler(h)
+        for handler in self._saved_console_handlers:
+            root.removeHandler(handler)
         root.addHandler(self._log_handler)
 
     def _detach_log_handler(self) -> None:
@@ -71,14 +74,13 @@ class TuiDashboard:
         if self._log_handler is not None:
             root.removeHandler(self._log_handler)
             self._log_handler = None
-        for h in self._saved_console_handlers:
-            root.addHandler(h)
+        for handler in self._saved_console_handlers:
+            root.addHandler(handler)
         self._saved_console_handlers = []
 
     def handle_event(self, event: dict[str, object]) -> None:
         with self._lock:
             event_type = str(event.get("type", ""))
-
             if event_type == "device_complete":
                 if event.get("success"):
                     self.success += 1
@@ -112,9 +114,9 @@ class TuiDashboard:
         bar = Text()
         bar.append("[", style="dim")
         if filled > 0:
-            bar.append("█" * filled, style="bold green")
+            bar.append("#" * filled, style="bold green")
         if empty > 0:
-            bar.append("░" * empty, style="grey50")
+            bar.append("-" * empty, style="grey50")
         bar.append("]", style="dim")
         bar.append(f" {safe_done}/{total} ({percent}%)", style="bold")
         return bar
@@ -123,10 +125,10 @@ class TuiDashboard:
     def _format_success_fail(success: int, fail: int, completed: int) -> Text:
         text = Text()
         text.append(str(success), style="bold green")
-        text.append(" 성공", style="green")
+        text.append(f" {t('dashboard.labels.success')}", style="green")
         text.append(" / ", style="dim")
         text.append(str(fail), style="bold red")
-        text.append(" 실패", style="red")
+        text.append(f" {t('dashboard.labels.failed')}", style="red")
         if completed > 0:
             rate = success / completed * 100.0
             text.append("  (", style="dim")
@@ -147,35 +149,56 @@ class TuiDashboard:
         throughput_per_min = (completed / elapsed_seconds) * 60.0
 
         if self._completed:
-            status_text = Text("● 완료", style="bold green")
+            status_text = Text(t("dashboard.status.completed"), style="bold green")
         elif completed > 0:
-            status_text = Text("● 진행 중", style="bold yellow")
+            status_text = Text(t("dashboard.status.in_progress"), style="bold yellow")
         else:
-            status_text = Text("● 준비 중", style="bold cyan")
+            status_text = Text(t("dashboard.status.preparing"), style="bold cyan")
 
         summary = Table.grid(padding=(0, 2))
         summary.add_column(style="cyan")
         summary.add_column(style="bold")
-        summary.add_row("모드", self.mode)
-        summary.add_row("상태", status_text)
-        summary.add_row("경과 시간", str(elapsed).split(".")[0])
-        summary.add_row("장비 진행", self._bar(self.completed, self.total_devices))
-        summary.add_row("성공/실패", self._format_success_fail(self.success, self.fail, completed))
-        summary.add_row("남은 장비", Text(str(remaining), style="bold cyan"))
-        summary.add_row("처리 속도", Text(f"{throughput_per_min:.2f} 대/분", style="bold magenta"))
-        summary.add_row("마지막 업데이트", self._last_updated_at.strftime("%H:%M:%S"))
+        summary.add_row(t("dashboard.labels.mode"), self.mode)
+        summary.add_row(t("dashboard.labels.status"), status_text)
+        summary.add_row(t("dashboard.labels.elapsed"), str(elapsed).split(".")[0])
+        summary.add_row(
+            t("dashboard.labels.progress"),
+            self._bar(self.completed, self.total_devices),
+        )
+        summary.add_row(
+            t("dashboard.labels.success_fail"),
+            self._format_success_fail(self.success, self.fail, completed),
+        )
+        summary.add_row(t("dashboard.labels.remaining"), Text(str(remaining), style="bold cyan"))
+        summary.add_row(
+            t("dashboard.labels.throughput"),
+            Text(
+                f"{throughput_per_min:.2f} {t('dashboard.units.devices_per_min')}",
+                style="bold magenta",
+            ),
+        )
+        summary.add_row(
+            t("dashboard.labels.last_updated"),
+            self._last_updated_at.strftime("%H:%M:%S"),
+        )
 
-        event_lines = "\n".join(self.recent_logs) if self.recent_logs else "아직 이벤트가 없습니다."
+        event_lines = "\n".join(self.recent_logs) if self.recent_logs else t("dashboard.no_events")
         event_text = Text(event_lines, overflow="ellipsis")
         return Group(
-            Panel(summary, title="[bold green]실시간 작업 대시보드[/bold green]", border_style="green"),
-            Panel(event_text, title="[bold cyan]최근 이벤트[/bold cyan]", border_style="cyan"),
+            Panel(
+                summary,
+                title=f"[bold green]{t('dashboard.titles.dashboard')}[/bold green]",
+                border_style="green",
+            ),
+            Panel(
+                event_text,
+                title=f"[bold cyan]{t('dashboard.titles.recent_events')}[/bold cyan]",
+                border_style="cyan",
+            ),
         )
 
 
 class _DashboardLogHandler(logging.Handler):
-    """대시보드가 활성화된 동안 로그 레코드를 패널로 전달하는 핸들러."""
-
     def __init__(self, dashboard: TuiDashboard) -> None:
         super().__init__()
         self._dashboard = dashboard

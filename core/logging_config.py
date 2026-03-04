@@ -1,4 +1,4 @@
-import logging
+﻿import logging
 import os
 from datetime import datetime
 
@@ -38,39 +38,39 @@ def init_logging(run_timestamp: str | None = None,
                  console_level: int = logging.WARNING,
                  enable_color: bool = True) -> str:
     """
-    애플리케이션 전역 로깅을 일관되게 초기화합니다.
+    ?좏뵆由ъ??댁뀡 ?꾩뿭 濡쒓퉭???쇨??섍쾶 珥덇린?뷀빀?덈떎.
 
-    - 루트 로거에만 핸들러를 부착해 중복 로그를 방지합니다
-    - 파일 로그(+ 콘솔 로그)를 동일 포맷으로 사용합니다
+    - 猷⑦듃 濡쒓굅?먮쭔 ?몃뱾?щ? 遺李⑺빐 以묐났 濡쒓렇瑜?諛⑹??⑸땲??
+    - ?뚯씪 濡쒓렇(+ 肄섏넄 濡쒓렇)瑜??숈씪 ?щ㎎?쇰줈 ?ъ슜?⑸땲??
 
     Returns
     -------
     log_file: str
-        생성된 로그 파일 경로
+        ?앹꽦??濡쒓렇 ?뚯씪 寃쎈줈
     """
     os.makedirs(log_dir, exist_ok=True)
 
     timestamp = run_timestamp or datetime.now().strftime('%Y%m%d_%H%M%S')
-    log_file = os.path.join(log_dir, f"network_inspector_{timestamp}.log")
+    log_file = os.path.join(log_dir, f"netops_inspector_{timestamp}.log")
 
     root_logger = logging.getLogger()
 
-    # 기존 모든 핸들러 제거 (중복 출력 방지)
+    # 湲곗〈 紐⑤뱺 ?몃뱾???쒓굅 (以묐났 異쒕젰 諛⑹?)
     for handler in root_logger.handlers[:]:
         root_logger.removeHandler(handler)
 
-    root_logger.setLevel(logging.DEBUG)  # 내부 기준은 DEBUG, 핸들러에서 레벨 제어
+    root_logger.setLevel(logging.DEBUG)  # ?대? 湲곗?? DEBUG, ?몃뱾?ъ뿉???덈꺼 ?쒖뼱
 
     log_format = '%(asctime)s | [%(threadName)s] | %(levelname)s | %(message)s'
     formatter = logging.Formatter(log_format)
 
-    # 파일 핸들러
+    # ?뚯씪 ?몃뱾??
     file_handler = logging.FileHandler(log_file, encoding='utf-8')
     file_handler.setLevel(file_level)
     file_handler.setFormatter(formatter)
     root_logger.addHandler(file_handler)
 
-    # 콘솔 핸들러 (옵션)
+    # 肄섏넄 ?몃뱾??(?듭뀡)
     if enable_console:
         if colorama_init is not None:
             colorama_init(autoreset=True)
@@ -82,9 +82,10 @@ def init_logging(run_timestamp: str | None = None,
     logging.getLogger('paramiko').setLevel(logging.WARNING)
     logging.getLogger('netmiko').setLevel(logging.WARNING)
 
-    root_logger.debug("전역 로깅 초기화 완료")
-    root_logger.debug("로그 파일 경로: %s", log_file)
+    root_logger.debug("?꾩뿭 濡쒓퉭 珥덇린???꾨즺")
+    root_logger.debug("濡쒓렇 ?뚯씪 寃쎈줈: %s", log_file)
 
     return log_file
+
 
 
