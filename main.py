@@ -10,9 +10,9 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
 
-from core.cli_input import get_command_filepath_from_cli, get_filepath_from_cli
+from core.cli_input import get_command_filepath_from_cli
 from core.custom_exceptions import NetworkInspectorError
-from core.file_handler import read_command_file, read_excel_file, save_results_to_excel
+from core.file_handler import read_command_file, read_excel_file
 from core.i18n import set_locale, t
 from core.inspector import NetworkInspector
 from core.logging_config import init_logging
@@ -23,13 +23,25 @@ from core.menu_i18n import (
     show_netmiko_device_types,
     show_settings_menu,
 )
+from core.plugin_platform import (
+    LEGACY_INVENTORY_PLUGIN,
+    LEGACY_OUTPUT_PLUGIN,
+    LEGACY_TASK_PLUGIN,
+    InventoryLoadError,
+    OutputRequest,
+    OutputWriteError,
+    TaskExecutionError,
+    TaskRequest,
+    TaskResult,
+    build_legacy_plugin_runtime,
+)
 from core.settings import AppSettings, load_settings, resolve_inspection_column_order
 from core.tui_dashboard import TuiDashboard
 from core.ui import get_password_from_cli
-from core.validator import validate_dataframe
 
 logger = logging.getLogger(__name__)
 console = Console()
+_PLUGIN_RUNTIME = build_legacy_plugin_runtime()
 
 
 def _read_excel_with_retry(filepath: str) -> pd.DataFrame | None:
@@ -111,18 +123,18 @@ def _print_run_summary(
     )
 
 
-def _print_result_summary(inspector: NetworkInspector, log_file: str) -> None:
+def _print_result_summary(task_result: TaskResult, log_file: str) -> None:
     console.print()
-    if inspector.results:
+    if task_result.results:
         console.print(f"[bold green]{t('main.result.completed')}[/bold green]")
-        console.print(f"  {t('main.result.result_file')}: {inspector.output_excel}")
-        if not inspector.inspection_only:
-            console.print(f"  {t('main.result.backup_dir')}: {inspector.backup_dir}")
-        console.print(f"  {t('main.result.session_log')}: {inspector.session_log_dir}")
+        console.print(f"  {t('main.result.result_file')}: {task_result.output_excel}")
+        if not task_result.inspection_only:
+            console.print(f"  {t('main.result.backup_dir')}: {task_result.backup_dir}")
+        console.print(f"  {t('main.result.session_log')}: {task_result.session_log_dir}")
         console.print(f"  {t('main.result.log_file')}: {log_file}")
     else:
         console.print(f"[yellow]{t('main.result.no_results')}[/yellow]")
-        console.print(f"  {t('main.result.session_log')}: {inspector.session_log_dir}")
+        console.print(f"  {t('main.result.session_log')}: {task_result.session_log_dir}")
         console.print(f"  {t('main.result.log_file')}: {log_file}")
 
     console.print()
@@ -139,17 +151,18 @@ def _run_custom_commands(settings: AppSettings) -> None:
     logger.info("-----------------------------------------")
     logger.info(t("main.info.mode_log_prefix", mode=mode_label))
 
-    filepath = get_filepath_from_cli()
-    if not filepath:
-        logger.warning(t("main.warning.input_path_missing"))
+    try:
+        inventory_payload = _PLUGIN_RUNTIME.load_inventory(
+            LEGACY_INVENTORY_PLUGIN,
+            settings=settings,
+        )
+    except InventoryLoadError as exc:
+        logger.warning("%s", exc)
         return
-    logger.info("INPUT   : %s", filepath)
 
-    devices_df = _read_excel_with_retry(filepath)
-    if devices_df is None:
-        return
-    devices_df = validate_dataframe(devices_df, settings.input_column_aliases)
-    devices = devices_df.to_dict("records")
+    filepath = inventory_payload.filepath
+    logger.info("INPUT   : %s", filepath)
+    devices = inventory_payload.devices
 
     vendor_os_pairs = {
         (
@@ -185,30 +198,43 @@ def _run_custom_commands(settings: AppSettings) -> None:
         return
 
     dashboard = TuiDashboard(mode_label, len(devices))
-    inspector = _create_inspector(
-        output_excel,
-        run_timestamp,
-        settings,
-        inspection_only=True,
+    request = TaskRequest(
+        task_name="custom_commands",
+        run_timestamp=run_timestamp,
+        settings=settings,
+        devices=devices,
         status_callback=dashboard.handle_event,
+        options={
+            "task_kind": "custom_commands",
+            "commands": commands,
+            "output_excel": output_excel,
+        },
     )
-    inspector.load_devices(devices)
 
     dashboard.start()
     try:
-        inspector.run_custom_commands(commands)
+        task_result = _PLUGIN_RUNTIME.run_task(LEGACY_TASK_PLUGIN, request)
+    except TaskExecutionError as exc:
+        logger.error("%s", exc)
+        return
     finally:
         dashboard.mark_completed(t("main.info.dashboard_completed_note"))
         dashboard.stop()
 
-    if inspector.results:
-        save_results_to_excel(
-            inspector.results,
-            inspector.output_excel,
-            column_aliases=settings.column_aliases,
+    try:
+        _PLUGIN_RUNTIME.write_output(
+            LEGACY_OUTPUT_PLUGIN,
+            OutputRequest(
+                output_name=LEGACY_OUTPUT_PLUGIN,
+                settings=settings,
+                task_result=task_result,
+            ),
         )
+    except OutputWriteError as exc:
+        logger.error("%s", exc)
+        return
 
-    _print_result_summary(inspector, log_file)
+    _print_result_summary(task_result, log_file)
 
 
 def _run_inspection_backup(settings: AppSettings) -> None:
@@ -231,34 +257,53 @@ def _run_inspection_backup(settings: AppSettings) -> None:
     logger.info("-----------------------------------------")
     logger.info(t("main.info.mode_log_prefix", mode=mode_label))
 
-    filepath = get_filepath_from_cli()
-    if not filepath:
-        logger.warning(t("main.warning.input_path_missing"))
+    try:
+        inventory_payload = _PLUGIN_RUNTIME.load_inventory(
+            LEGACY_INVENTORY_PLUGIN,
+            settings=settings,
+        )
+    except InventoryLoadError as exc:
+        logger.warning("%s", exc)
         return
-    logger.info("INPUT   : %s", filepath)
 
-    devices_df = _read_excel_with_retry(filepath)
-    if devices_df is None:
-        return
-    devices_df = validate_dataframe(devices_df, settings.input_column_aliases)
-    devices = devices_df.to_dict("records")
+    filepath = inventory_payload.filepath
+    logger.info("INPUT   : %s", filepath)
+    devices = inventory_payload.devices
 
     dashboard = TuiDashboard(mode_label, len(devices))
-    inspector = _create_inspector(
-        output_excel,
-        run_timestamp,
-        settings,
-        inspection_only=(action_choice == "1"),
-        backup_only=(action_choice == "2"),
+    request = TaskRequest(
+        task_name="inspection_backup",
+        run_timestamp=run_timestamp,
+        settings=settings,
+        devices=devices,
         status_callback=dashboard.handle_event,
+        options={
+            "task_kind": "inspection_backup",
+            "action_choice": action_choice,
+            "output_excel": output_excel,
+        },
     )
-    inspector.load_devices(devices)
+
+    _print_run_summary(mode_label, len(devices), filepath, settings, run_timestamp, log_file)
+    if not ask_yes_no(t("main.confirm.run_now"), default=True):
+        logger.info(t("main.info.job_cancelled"))
+        return
+
+    dashboard.start()
+    try:
+        task_result = _PLUGIN_RUNTIME.run_task(LEGACY_TASK_PLUGIN, request)
+    except TaskExecutionError as exc:
+        logger.error("%s", exc)
+        return
+    finally:
+        dashboard.mark_completed(t("main.info.dashboard_completed_note"))
+        dashboard.stop()
 
     column_order: list[str] | None = None
     if action_choice in ("1", "3"):
-        available_columns = inspector.get_available_inspection_columns(inspector.devices)
+        available_columns = task_result.metadata.get("available_columns", [])
+        profile_keys = task_result.metadata.get("profile_keys", [])
         if available_columns:
-            profile_keys = inspector.get_device_profile_keys(inspector.devices)
             column_order = resolve_inspection_column_order(
                 available_columns,
                 profile_keys,
@@ -272,32 +317,21 @@ def _run_inspection_backup(settings: AppSettings) -> None:
         else:
             logger.info(t("main.warning.no_order_columns"))
 
-    _print_run_summary(mode_label, len(devices), filepath, settings, run_timestamp, log_file)
-    if not ask_yes_no(t("main.confirm.run_now"), default=True):
-        logger.info(t("main.info.job_cancelled"))
+    try:
+        _PLUGIN_RUNTIME.write_output(
+            LEGACY_OUTPUT_PLUGIN,
+            OutputRequest(
+                output_name=LEGACY_OUTPUT_PLUGIN,
+                settings=settings,
+                task_result=task_result,
+                column_order=column_order,
+            ),
+        )
+    except OutputWriteError as exc:
+        logger.error("%s", exc)
         return
 
-    dashboard.start()
-    try:
-        if action_choice == "1":
-            inspector.inspect_devices(backup_only=False)
-        elif action_choice == "2":
-            inspector.inspect_devices(backup_only=True)
-        else:
-            inspector.inspect_and_backup_devices()
-    finally:
-        dashboard.mark_completed(t("main.info.dashboard_completed_note"))
-        dashboard.stop()
-
-    if inspector.results:
-        save_results_to_excel(
-            inspector.results,
-            inspector.output_excel,
-            column_order=column_order,
-            column_aliases=settings.column_aliases,
-        )
-
-    _print_result_summary(inspector, log_file)
+    _print_result_summary(task_result, log_file)
 
 
 def main() -> None:

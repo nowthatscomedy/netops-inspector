@@ -160,6 +160,10 @@ If a translation key is missing, messages fall back to `fallback_language`, then
 - Portuguese (Brazil): `docs/README.pt-BR.md`
 - Simplified Chinese: `docs/README.zh-CN.md`
 
+## Architecture Draft
+
+- Plugin platform draft: `docs/plugin-platform-draft.md`
+
 ## Custom Rules (`custom_rules.yaml`)
 
 You can extend commands/parsers without changing Python code.
