@@ -2,13 +2,13 @@ app:
   title: 网络运营检查员
 cli:
   path:
-    excel_message: 设备Excel文件路径：
+    excel_message: 设备清单文件路径（xlsx/xls/xlsm/csv/json）：
     command_message: 命令文件路径（txt/xlsx）：
     long_instruction: Tab：自动完成 / Enter：确认 / Ctrl+C：取消
     invalid_path: 请输入有效的文件路径。
   warning:
     file_not_found: 输入文件不存在：{path}
-    unsupported_excel_extension: 不支持的文件扩展名（仅限 xlsx/xls/xlsm）：{suffix}
+    unsupported_excel_extension: 不支持的文件扩展名（仅限 xlsx/xls/xlsm/csv/json）：{suffix}
     unsupported_command_extension: 不支持的文件扩展名（仅限 txt/xlsx/xls/xlsm）：{suffix}
 ui:
   encrypted_excel_password: 加密文件的密码：

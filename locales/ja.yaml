@@ -3,13 +3,13 @@ app:
 
 cli:
   path:
-    excel_message: "デバイスExcelファイルのパス:"
+    excel_message: "デバイスインベントリファイルのパス (xlsx/xls/xlsm/csv/json):"
     command_message: "コマンドファイルのパス (txt/xlsx):"
     long_instruction: "Tab: 補完 / Enter: 決定 / Ctrl+C: キャンセル"
     invalid_path: "有効なファイルパスを入力してください。"
   warning:
     file_not_found: "入力ファイルが存在しません: {path}"
-    unsupported_excel_extension: "サポートされていない拡張子です (xlsx/xls/xlsm のみ): {suffix}"
+    unsupported_excel_extension: "サポートされていない拡張子です (xlsx/xls/xlsm/csv/json のみ): {suffix}"
     unsupported_command_extension: "サポートされていない拡張子です (txt/xlsx/xls/xlsm のみ): {suffix}"
 
 ui:

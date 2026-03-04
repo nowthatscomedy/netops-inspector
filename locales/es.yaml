@@ -3,13 +3,13 @@ app:
 
 cli:
   path:
-    excel_message: "Ruta del archivo Excel de dispositivos:"
+    excel_message: "Ruta del archivo de inventario de dispositivos (xlsx/xls/xlsm/csv/json):"
     command_message: "Ruta del archivo de comandos (txt/xlsx):"
     long_instruction: "Tab: autocompletar / Enter: confirmar / Ctrl+C: cancelar"
     invalid_path: "Ingresa una ruta de archivo válida."
   warning:
     file_not_found: "El archivo de entrada no existe: {path}"
-    unsupported_excel_extension: "Extensión no compatible (solo xlsx/xls/xlsm): {suffix}"
+    unsupported_excel_extension: "Extensión no compatible (solo xlsx/xls/xlsm/csv/json): {suffix}"
     unsupported_command_extension: "Extensión no compatible (solo txt/xlsx/xls/xlsm): {suffix}"
 
 ui:

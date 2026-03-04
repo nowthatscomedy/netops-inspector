@@ -3,13 +3,13 @@ app:
 
 cli:
   path:
-    excel_message: "Caminho do arquivo Excel de dispositivos:"
+    excel_message: "Caminho do arquivo de inventário de dispositivos (xlsx/xls/xlsm/csv/json):"
     command_message: "Caminho do arquivo de comandos (txt/xlsx):"
     long_instruction: "Tab: autocompletar / Enter: confirmar / Ctrl+C: cancelar"
     invalid_path: "Digite um caminho de arquivo válido."
   warning:
     file_not_found: "O arquivo de entrada não existe: {path}"
-    unsupported_excel_extension: "Extensão não suportada (somente xlsx/xls/xlsm): {suffix}"
+    unsupported_excel_extension: "Extensão não suportada (somente xlsx/xls/xlsm/csv/json): {suffix}"
     unsupported_command_extension: "Extensão não suportada (somente txt/xlsx/xls/xlsm): {suffix}"
 
 ui:

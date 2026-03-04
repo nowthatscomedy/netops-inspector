@@ -3,14 +3,14 @@
 Language: [English](README.md) | [한국어](docs/README.ko.md) | [日本語](docs/README.ja.md) | [Español](docs/README.es.md) | [Português (Brasil)](docs/README.pt-BR.md) | [简体中文](docs/README.zh-CN.md)
 
 NetOps Inspector is a CLI tool for multi-vendor network device inspection and configuration backup.
-It reads device inventories from Excel files, connects via SSH/Telnet, runs inspection commands, parses outputs, and writes result workbooks.
+It reads device inventories from Excel/CSV/JSON files, connects via SSH/Telnet, runs inspection commands, parses outputs, and writes result workbooks.
 
 ## Key Features
 
 - Multi-vendor architecture (`vendors/` modules)
 - Inspection / Backup / Inspection+Backup execution modes
 - Batch custom command execution from TXT or Excel files
-- Excel input validation (required fields, duplicate IP, vendor/OS compatibility)
+- Inventory input validation (required fields, duplicate IP, vendor/OS compatibility)
 - Retry and timeout controls for network I/O
 - Real-time terminal dashboard during execution
 - Session log files per device
@@ -62,7 +62,21 @@ Main menu:
 4. Show Netmiko `device_type` list
 5. Exit
 
-## Excel Input Schema
+## Inventory Input Schema
+
+Supported inventory formats:
+
+- Excel: `.xlsx`, `.xls`, `.xlsm`
+- CSV: `.csv`
+- JSON: `.json`
+  - List form: `[{"ip":"...","vendor":"..."}]`
+  - Wrapped form: `{"devices":[{"ip":"...","vendor":"..."}]}`
+
+Example files:
+
+- `examples/inventory/devices.csv`
+- `examples/inventory/devices.json`
+- `examples/inventory/devices_wrapped.json`
 
 Required columns:
 

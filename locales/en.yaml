@@ -3,13 +3,13 @@
 
 cli:
   path:
-    excel_message: "Device Excel file path:"
+    excel_message: "Device inventory file path (xlsx/xls/xlsm/csv/json):"
     command_message: "Command file path (txt/xlsx):"
     long_instruction: "Tab: autocomplete / Enter: confirm / Ctrl+C: cancel"
     invalid_path: "Please enter a valid file path."
   warning:
     file_not_found: "Input file does not exist: {path}"
-    unsupported_excel_extension: "Unsupported file extension (xlsx/xls/xlsm only): {suffix}"
+    unsupported_excel_extension: "Unsupported file extension (xlsx/xls/xlsm/csv/json only): {suffix}"
     unsupported_command_extension: "Unsupported file extension (txt/xlsx/xls/xlsm only): {suffix}"
 
 ui:

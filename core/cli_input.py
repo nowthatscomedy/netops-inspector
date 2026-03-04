@@ -10,7 +10,7 @@ from core.i18n import t
 
 logger = logging.getLogger(__name__)
 
-EXCEL_EXTENSIONS = (".xlsx", ".xls", ".xlsm")
+INVENTORY_EXTENSIONS = (".xlsx", ".xls", ".xlsm", ".csv", ".json")
 COMMAND_EXTENSIONS = (".txt", ".xlsx", ".xls", ".xlsm")
 
 
@@ -39,7 +39,7 @@ def get_filepath_from_cli() -> str | None:
         logger.warning(t("cli.warning.file_not_found", path=path))
         return None
 
-    if path.suffix.lower() not in EXCEL_EXTENSIONS:
+    if path.suffix.lower() not in INVENTORY_EXTENSIONS:
         logger.warning(
             t(
                 "cli.warning.unsupported_excel_extension",

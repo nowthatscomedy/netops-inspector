@@ -3,14 +3,14 @@
 Language: [English](../README.md) | [한국어](README.ko.md) | [日本語](README.ja.md) | [Español](README.es.md) | [Português (Brasil)](README.pt-BR.md) | [简体中文](README.zh-CN.md)
 
 NetOps Inspector 是一款用于多厂商网络设备巡检与配置备份的 CLI 工具。
-它从 Excel 设备清单读取数据，通过 SSH/Telnet 连接设备，执行巡检命令，解析输出并生成结果工作簿。
+它从 Excel/CSV/JSON 设备清单读取数据，通过 SSH/Telnet 连接设备，执行巡检命令，解析输出并生成结果工作簿。
 
 ## 核心功能
 
 - 多厂商架构（`vendors/` 模块）
 - 巡检 / 备份 / 巡检+备份 执行模式
 - 支持从 TXT 或 Excel 批量执行自定义命令
-- Excel 输入校验（必填字段、重复 IP、vendor/OS 兼容性）
+- 清单输入校验（必填字段、重复 IP、vendor/OS 兼容性）
 - 网络 I/O 的重试与超时控制
 - 执行期间实时终端仪表盘
 - 按设备生成会话日志文件
@@ -62,7 +62,21 @@ python main.py
 4. 显示 Netmiko `device_type` 列表
 5. 退出
 
-## Excel 输入结构
+## 清单输入结构
+
+支持的清单格式：
+
+- Excel: `.xlsx`, `.xls`, `.xlsm`
+- CSV: `.csv`
+- JSON: `.json`
+  - 列表形式：`[{"ip":"...","vendor":"..."}]`
+  - 包装形式：`{"devices":[{"ip":"...","vendor":"..."}]}`
+
+示例文件：
+
+- `examples/inventory/devices.csv`
+- `examples/inventory/devices.json`
+- `examples/inventory/devices_wrapped.json`
 
 必填列：
 

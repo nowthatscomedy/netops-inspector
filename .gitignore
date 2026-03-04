@@ -35,6 +35,7 @@ parts/
 .vscode/
 .cursor/
 .cursorrules
+AGENTS.md
 *.swp
 *.swo
 *~

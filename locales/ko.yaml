@@ -3,13 +3,13 @@ app:
 
 cli:
   path:
-    excel_message: "장비 엑셀 파일 경로:"
+    excel_message: "장비 인벤토리 파일 경로 (xlsx/xls/xlsm/csv/json):"
     command_message: "명령어 파일 경로 (txt/xlsx):"
     long_instruction: "Tab: 자동완성 / Enter: 확인 / Ctrl+C: 취소"
     invalid_path: "유효한 파일 경로를 입력하세요."
   warning:
     file_not_found: "입력한 파일이 존재하지 않습니다: {path}"
-    unsupported_excel_extension: "지원하지 않는 파일 형식입니다 (xlsx/xls/xlsm만 지원): {suffix}"
+    unsupported_excel_extension: "지원하지 않는 파일 형식입니다 (xlsx/xls/xlsm/csv/json만 지원): {suffix}"
     unsupported_command_extension: "지원하지 않는 파일 형식입니다 (txt/xlsx/xls/xlsm만 지원): {suffix}"
 
 ui:

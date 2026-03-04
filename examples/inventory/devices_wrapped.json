@@ -1,0 +1,23 @@
+{
+  "devices": [
+    {
+      "ip": "192.168.1.10",
+      "vendor": "cisco",
+      "os": "ios",
+      "connection_type": "ssh",
+      "port": 22,
+      "username": "admin",
+      "password": "PASSWORD",
+      "enable_password": "ENABLE_PASSWORD"
+    },
+    {
+      "ip": "192.168.1.20",
+      "vendor": "ruckus",
+      "os": "icx",
+      "connection_type": "ssh",
+      "port": 22,
+      "username": "super",
+      "password": "PASSWORD"
+    }
+  ]
+}

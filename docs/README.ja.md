@@ -3,14 +3,14 @@
 Language: [English](../README.md) | [한국어](README.ko.md) | [日本語](README.ja.md) | [Español](README.es.md) | [Português (Brasil)](README.pt-BR.md) | [简体中文](README.zh-CN.md)
 
 NetOps Inspector は、マルチベンダーのネットワーク機器の点検と設定バックアップを行う CLI ツールです。
-Excel の機器インベントリを読み込み、SSH/Telnet で接続し、点検コマンドを実行して出力を解析し、結果ワークブックを作成します。
+Excel/CSV/JSON の機器インベントリを読み込み、SSH/Telnet で接続し、点検コマンドを実行して出力を解析し、結果ワークブックを作成します。
 
 ## 主な機能
 
 - マルチベンダー構成（`vendors/` モジュール）
 - 点検 / バックアップ / 点検+バックアップ 実行モード
 - TXT または Excel のカスタムコマンド一括実行
-- 入力 Excel 検証（必須項目、重複 IP、vendor/OS 互換性）
+- インベントリ入力検証（必須項目、重複 IP、vendor/OS 互換性）
 - ネットワーク I/O のリトライ・タイムアウト制御
 - 実行中のリアルタイム端末ダッシュボード
 - 機器ごとのセッションログ
@@ -62,7 +62,21 @@ python main.py
 4. Netmiko `device_type` 一覧表示
 5. 終了
 
-## Excel 入力スキーマ
+## インベントリ入力スキーマ
+
+サポートするインベントリ形式:
+
+- Excel: `.xlsx`, `.xls`, `.xlsm`
+- CSV: `.csv`
+- JSON: `.json`
+  - リスト形式: `[{"ip":"...","vendor":"..."}]`
+  - ラップ形式: `{"devices":[{"ip":"...","vendor":"..."}]}`
+
+サンプルファイル:
+
+- `examples/inventory/devices.csv`
+- `examples/inventory/devices.json`
+- `examples/inventory/devices_wrapped.json`
 
 必須列:
 

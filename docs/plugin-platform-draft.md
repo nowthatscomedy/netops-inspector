@@ -47,6 +47,12 @@ The old user-visible behavior is still preserved:
 - Output is still fixed to Excel.
 - Plugin selection is currently extension-based (`.xlsx/.xls/.xlsm`, `.csv`, `.json`).
 
+## Inventory Examples
+
+- `examples/inventory/devices.csv`
+- `examples/inventory/devices.json`
+- `examples/inventory/devices_wrapped.json`
+
 ## Next Migration Steps
 
 1. Add plugin selection in `settings.yaml` (`inventory_plugin`, `task_plugin`, `output_plugin`).
