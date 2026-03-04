@@ -3,7 +3,7 @@
 Language: [English](../README.md) | [한국어](README.ko.md) | [日本語](README.ja.md) | [Español](README.es.md) | [Português (Brasil)](README.pt-BR.md) | [简体中文](README.zh-CN.md)
 
 NetOps Inspector é uma ferramenta CLI para inspeção de dispositivos de rede multi-vendor e backup de configuração.
-Ela lê inventários de dispositivos em Excel/CSV/JSON, conecta via SSH/Telnet, executa comandos de inspeção, faz parsing das saídas e gera planilhas de resultado.
+Ela lê inventários de dispositivos em Excel/CSV/JSON, conecta via SSH/Telnet, executa comandos de inspeção, faz parsing das saídas e gera arquivos de resultado (Excel/JSON/CSV).
 
 ## Principais recursos
 
@@ -15,7 +15,7 @@ Ela lê inventários de dispositivos em Excel/CSV/JSON, conecta via SSH/Telnet, 
 - Controle de retry e timeout para I/O de rede
 - Dashboard de terminal em tempo real durante a execução
 - Arquivos de log de sessão por dispositivo
-- Geração de planilha de resultados com alias/ordem de colunas configurável
+- Geração de arquivos de resultado (Excel/JSON/CSV) com alias/ordem de colunas configurável
 - Extensões de parsing e comandos definidas pelo usuário via `custom_rules.yaml`
 - UI/mensagens com i18n (`en`, `ko`, `ja`, `es`, `pt-BR`, `zh-CN`)
 
@@ -185,6 +185,10 @@ Se faltar o arquivo de locale ou uma chave de tradução, as mensagens caem para
 - Portuguese (Brazil): `docs/README.pt-BR.md`
 - Simplified Chinese: `docs/README.zh-CN.md`
 
+## Rascunho de arquitetura
+
+- Rascunho da plataforma de plugins: `docs/plugin-platform-draft.md`
+
 ## Regras customizadas (`custom_rules.yaml`)
 
 Você pode estender comandos/parsers sem alterar código Python.
@@ -229,7 +233,7 @@ Uso:
 build.bat
 ```
 
-O script espera `NetOpsInspector.spec` na raiz do repositório.
+O script executa o PyInstaller diretamente a partir do `main.py` e não requer `NetOpsInspector.spec`.
 
 ## Notas de segurança
 

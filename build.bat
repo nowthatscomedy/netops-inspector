@@ -25,7 +25,7 @@ if exist "build" rmdir /s /q "build"
 
 echo [1/3] Starting PyInstaller build...
 echo.
-pyinstaller NetOpsInspector.spec --noconfirm
+pyinstaller main.py --name NetOpsInspector --onefile --noconfirm --collect-submodules vendors --add-data "locales;locales"
 if errorlevel 1 (
     echo.
     echo [ERROR] Build failed

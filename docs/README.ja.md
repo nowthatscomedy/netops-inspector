@@ -3,7 +3,7 @@
 Language: [English](../README.md) | [한국어](README.ko.md) | [日本語](README.ja.md) | [Español](README.es.md) | [Português (Brasil)](README.pt-BR.md) | [简体中文](README.zh-CN.md)
 
 NetOps Inspector は、マルチベンダーのネットワーク機器の点検と設定バックアップを行う CLI ツールです。
-Excel/CSV/JSON の機器インベントリを読み込み、SSH/Telnet で接続し、点検コマンドを実行して出力を解析し、結果ワークブックを作成します。
+Excel/CSV/JSON の機器インベントリを読み込み、SSH/Telnet で接続し、点検コマンドを実行して出力を解析し、結果ファイル（Excel/JSON/CSV）を作成します。
 
 ## 主な機能
 
@@ -15,7 +15,7 @@ Excel/CSV/JSON の機器インベントリを読み込み、SSH/Telnet で接続
 - ネットワーク I/O のリトライ・タイムアウト制御
 - 実行中のリアルタイム端末ダッシュボード
 - 機器ごとのセッションログ
-- 列エイリアス/順序を設定可能な結果ワークブック生成
+- 列エイリアス/順序を設定可能な結果ファイル（Excel/JSON/CSV）生成
 - `custom_rules.yaml` によるユーザー定義の解析・コマンド拡張
 - 多言語 UI/メッセージ対応（`en`, `ko`, `ja`, `es`, `pt-BR`, `zh-CN`）
 
@@ -185,6 +185,10 @@ output_plugin: excel_results
 - Portuguese (Brazil): `docs/README.pt-BR.md`
 - Simplified Chinese: `docs/README.zh-CN.md`
 
+## アーキテクチャ草案
+
+- プラグインプラットフォーム草案: `docs/plugin-platform-draft.md`
+
 ## カスタムルール（`custom_rules.yaml`）
 
 Python コードを変更せずにコマンド/パーサーを拡張できます。
@@ -229,7 +233,7 @@ python -m pytest
 build.bat
 ```
 
-このスクリプトは、リポジトリルートに `NetOpsInspector.spec` があることを前提とします。
+このスクリプトは `main.py` を直接対象に PyInstaller を実行するため、`NetOpsInspector.spec` は不要です。
 
 ## セキュリティ注意事項
 

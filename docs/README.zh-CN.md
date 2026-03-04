@@ -3,7 +3,7 @@
 Language: [English](../README.md) | [한국어](README.ko.md) | [日本語](README.ja.md) | [Español](README.es.md) | [Português (Brasil)](README.pt-BR.md) | [简体中文](README.zh-CN.md)
 
 NetOps Inspector 是一款用于多厂商网络设备巡检与配置备份的 CLI 工具。
-它从 Excel/CSV/JSON 设备清单读取数据，通过 SSH/Telnet 连接设备，执行巡检命令，解析输出并生成结果工作簿。
+它从 Excel/CSV/JSON 设备清单读取数据，通过 SSH/Telnet 连接设备，执行巡检命令，解析输出并生成结果文件（Excel/JSON/CSV）。
 
 ## 核心功能
 
@@ -15,7 +15,7 @@ NetOps Inspector 是一款用于多厂商网络设备巡检与配置备份的 CL
 - 网络 I/O 的重试与超时控制
 - 执行期间实时终端仪表盘
 - 按设备生成会话日志文件
-- 支持列别名/列顺序配置的结果工作簿生成
+- 支持列别名/列顺序配置的结果文件（Excel/JSON/CSV）生成
 - 通过 `custom_rules.yaml` 扩展用户自定义解析与命令
 - i18n UI/消息支持（`en`, `ko`, `ja`, `es`, `pt-BR`, `zh-CN`）
 
@@ -185,6 +185,10 @@ output_plugin: excel_results
 - Portuguese (Brazil): `docs/README.pt-BR.md`
 - Simplified Chinese: `docs/README.zh-CN.md`
 
+## 架构草案
+
+- 插件平台草案：`docs/plugin-platform-draft.md`
+
 ## 自定义规则（`custom_rules.yaml`）
 
 无需修改 Python 代码即可扩展命令和解析器。
@@ -229,7 +233,7 @@ python -m pytest
 build.bat
 ```
 
-脚本要求仓库根目录存在 `NetOpsInspector.spec`。
+脚本会直接基于 `main.py` 执行 PyInstaller，不需要 `NetOpsInspector.spec`。
 
 ## 安全说明
 

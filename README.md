@@ -3,7 +3,7 @@
 Language: [English](README.md) | [한국어](docs/README.ko.md) | [日本語](docs/README.ja.md) | [Español](docs/README.es.md) | [Português (Brasil)](docs/README.pt-BR.md) | [简体中文](docs/README.zh-CN.md)
 
 NetOps Inspector is a CLI tool for multi-vendor network device inspection and configuration backup.
-It reads device inventories from Excel/CSV/JSON files, connects via SSH/Telnet, runs inspection commands, parses outputs, and writes result workbooks.
+It reads device inventories from Excel/CSV/JSON files, connects via SSH/Telnet, runs inspection commands, parses outputs, and writes result files (Excel/JSON/CSV).
 
 ## Key Features
 
@@ -15,7 +15,7 @@ It reads device inventories from Excel/CSV/JSON files, connects via SSH/Telnet, 
 - Retry and timeout controls for network I/O
 - Real-time terminal dashboard during execution
 - Session log files per device
-- Result workbook generation with configurable column alias/order
+- Result file generation (Excel/JSON/CSV) with configurable column alias/order
 - User-defined parsing and command extensions via `custom_rules.yaml`
 - i18n-ready UI/messages (`en`, `ko`, `ja`, `es`, `pt-BR`, `zh-CN`)
 
@@ -233,7 +233,7 @@ Use:
 build.bat
 ```
 
-The script expects `NetOpsInspector.spec` in the repository root.
+The script runs PyInstaller directly from `main.py` and does not require `NetOpsInspector.spec`.
 
 ## Security Notes
 
