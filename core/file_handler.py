@@ -1,9 +1,16 @@
-import pandas as pd
+from __future__ import annotations
+
 import io
 import logging
 import os
 from pathlib import Path
+from typing import Any
+
+import pandas as pd
 from openpyxl.styles import PatternFill
+
+from core.i18n import t
+from core.settings import canonicalize_column_name
 
 try:
     import msoffcrypto
@@ -12,8 +19,8 @@ except ImportError:
 
 logger = logging.getLogger(__name__)
 
+
 def read_command_file(filepath: str) -> list[str]:
-    """명령어 파일(txt/xlsx)을 읽어 순서대로 반환합니다."""
     path = Path(filepath)
     suffix = path.suffix.lower()
     commands: list[str] = []
@@ -23,97 +30,122 @@ def read_command_file(filepath: str) -> list[str]:
             df = pd.read_excel(filepath, header=None)
             if df.empty:
                 return []
-            first_col = df.iloc[:, 0].tolist()
-            for value in first_col:
+            for value in df.iloc[:, 0].tolist():
                 if pd.isna(value):
                     continue
                 line = str(value).strip()
                 if line:
                     commands.append(line)
         elif suffix == ".txt":
-            with open(filepath, "r", encoding="utf-8") as f:
-                for line in f:
+            with open(filepath, "r", encoding="utf-8") as file:
+                for line in file:
                     cleaned = line.strip()
                     if cleaned:
                         commands.append(cleaned)
         else:
-            raise ValueError(f"지원하지 않는 파일 형식입니다: {suffix}")
-    except Exception as e:
-        logger.error(f"명령어 파일 읽기 실패: {filepath}, 오류: {e}")
+            raise ValueError(t("file_handler.error.unsupported_extension", suffix=suffix))
+    except Exception as exc:
+        logger.error(
+            t(
+                "file_handler.error.command_file_read_failed",
+                filepath=filepath,
+                error=exc,
+            ),
+        )
         raise
 
     return commands
 
-def read_excel_file(filepath: str, password: str = None) -> pd.DataFrame:
-    """
-    엑셀 파일을 읽어 데이터프레임으로 반환합니다.
-    암호화된 경우 암호를 사용하여 복호화합니다.
-    """
+
+def read_excel_file(filepath: str, password: str | None = None) -> pd.DataFrame:
     try:
         if password:
             if msoffcrypto is None:
-                raise ImportError("암호화된 Excel 파일 지원을 위해 'msoffcrypto-tool' 라이브러리를 설치해주세요.")
-            
+                raise ImportError(t("file_handler.error.encrypted_excel_dependency"))
+
             decrypted_file = io.BytesIO()
-            with open(filepath, 'rb') as f:
-                office_file = msoffcrypto.OfficeFile(f)
+            with open(filepath, "rb") as file:
+                office_file = msoffcrypto.OfficeFile(file)
                 office_file.load_key(password=password)
                 office_file.decrypt(decrypted_file)
-            
+
             df = pd.read_excel(decrypted_file)
-            logger.info(f"암호화된 파일 복호화 성공: {filepath}")
+            logger.info(t("file_handler.info.encrypted_excel_decrypted", filepath=filepath))
         else:
             df = pd.read_excel(filepath)
-            logger.info(f"선택한 파일: {filepath}")
-        
+            logger.info(t("file_handler.info.selected_file", filepath=filepath))
         return df
-    except Exception as e:
-        logger.error(f"엑셀 파일 읽기 실패: {filepath}, 오류: {e}")
+    except Exception as exc:
+        logger.error(
+            t("file_handler.error.excel_read_failed", filepath=filepath, error=exc),
+        )
         raise
 
+
 def save_results_to_excel(
-    results: list,
+    results: list[dict[str, Any]],
     output_filepath: str,
-    column_order: list[str] | None = None
-):
-    """결과를 엑셀 파일에 저장하고, 실패한 항목에 서식을 적용합니다."""
+    column_order: list[str] | None = None,
+    column_aliases: dict[str, str] | None = None,
+) -> None:
     try:
-        logger.info(f"결과 저장 시작: {output_filepath}")
+        logger.info(t("file_handler.info.result_save_started", filepath=output_filepath))
 
         output_dir = os.path.dirname(output_filepath)
         if output_dir:
             os.makedirs(output_dir, exist_ok=True)
-        
-        processed_results = []
-        for res in results:
-            row = {
-                'ip': res.get('ip'),
-                'vendor': res.get('vendor'),
-                'os': res.get('os'),
-                '접속 상태': '성공' if res.get('status') == 'success' else '실패',
-                '오류 메시지': res.get('error_message', '')
+
+        status_col = t("excel.columns.connection_status")
+        error_col = t("excel.columns.error_message")
+        status_success = t("excel.status.success")
+        status_failed = t("excel.status.failed")
+        sheet_name = t("excel.sheet.inspection_results")
+
+        aliases = dict(column_aliases or {})
+        processed_results: list[dict[str, Any]] = []
+        for result in results:
+            row: dict[str, Any] = {
+                "ip": result.get("ip"),
+                "vendor": result.get("vendor"),
+                "os": result.get("os"),
+                status_col: status_success
+                if result.get("status") == "success"
+                else status_failed,
+                error_col: result.get("error_message", ""),
             }
-            if res.get('inspection_results'):
-                for key, value in res['inspection_results'].items():
-                    if not key.startswith('error_') and key not in ['error', 'backup_error', 'backup_file']:
-                        row[key] = value
-            
+            inspection_results = result.get("inspection_results")
+            if isinstance(inspection_results, dict):
+                for key, value in inspection_results.items():
+                    if key.startswith("error_") or key in {"error", "backup_error", "backup_file"}:
+                        continue
+                    canonical_key = canonicalize_column_name(key, aliases)
+                    if not canonical_key:
+                        continue
+                    if (
+                        canonical_key in row
+                        and row[canonical_key] not in (None, "")
+                        and value not in (None, "")
+                        and str(row[canonical_key]) != str(value)
+                    ):
+                        row[canonical_key] = f"{row[canonical_key]}, {value}"
+                    else:
+                        row[canonical_key] = value
+
             processed_results.append(row)
 
         if not processed_results:
-            logger.warning("저장할 결과가 없습니다.")
+            logger.warning(t("file_handler.warning.no_results"))
             return
 
         df = pd.DataFrame(processed_results)
-        
-        base_cols = ['ip', 'vendor', 'os', '접속 상태', '오류 메시지']
+        base_cols = ["ip", "vendor", "os", status_col, error_col]
         if column_order:
             ordered_inspection_cols = [
-                col for col in column_order
-                if col in df.columns and col not in base_cols
+                col for col in column_order if col in df.columns and col not in base_cols
             ]
             remaining_cols = [
-                col for col in df.columns
+                col
+                for col in df.columns
                 if col not in base_cols and col not in ordered_inspection_cols
             ]
             df = df[base_cols + ordered_inspection_cols + remaining_cols]
@@ -121,29 +153,30 @@ def save_results_to_excel(
             other_cols = [col for col in df.columns if col not in base_cols]
             df = df[base_cols + other_cols]
 
-        with pd.ExcelWriter(output_filepath, engine='openpyxl') as writer:
-            df.to_excel(writer, index=False, sheet_name='Inspection Results')
-            
-            worksheet = writer.sheets['Inspection Results']
-            
-            light_red_fill = PatternFill(start_color='FFFFC7CE',
-                                         end_color='FFFFC7CE',
-                                         fill_type='solid')
-            
-            for idx, row in df.iterrows():
-                if row['접속 상태'] == '실패':
-                    for col_idx in range(1, len(df.columns) + 1):
-                        worksheet.cell(row=idx + 2, column=col_idx).fill = light_red_fill
-                        
+        with pd.ExcelWriter(output_filepath, engine="openpyxl") as writer:
+            df.to_excel(writer, index=False, sheet_name=sheet_name)
+            worksheet = writer.sheets[sheet_name]
+
+            light_red_fill = PatternFill(
+                start_color="FFFFC7CE",
+                end_color="FFFFC7CE",
+                fill_type="solid",
+            )
+
+            for index, row in df.iterrows():
+                if row[status_col] != status_failed:
+                    continue
+                for col_idx in range(1, len(df.columns) + 1):
+                    worksheet.cell(row=index + 2, column=col_idx).fill = light_red_fill
+
             for column_cells in worksheet.columns:
                 try:
                     length = max(len(str(cell.value)) for cell in column_cells if cell.value)
                     worksheet.column_dimensions[column_cells[0].column_letter].width = length + 2
-                except (ValueError, TypeError):
-                    pass
+                except (TypeError, ValueError):
+                    continue
 
-        logger.info(f"결과가 저장되었습니다: {output_filepath}")
-        
-    except Exception as e:
-        logger.error(f"결과 저장 중 오류 발생: {str(e)}")
-        raise 
+        logger.info(t("file_handler.info.result_saved", filepath=output_filepath))
+    except Exception as exc:
+        logger.error(t("file_handler.error.excel_save_failed", error=exc))
+        raise

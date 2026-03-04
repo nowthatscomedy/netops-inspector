@@ -151,7 +151,7 @@ PIOLINK_PARSING_RULES = {
                 'patterns': [
                     {
                         'pattern': r'CPU Usage\s+:\s+(.*)',
-                        'output_column': 'CPU Usage %'
+                        'output_column': 'CPU Usage'
                     },
                     {
                         'pattern': r'Total Memory:\s+(.*)',
@@ -167,7 +167,7 @@ PIOLINK_PARSING_RULES = {
                     },
                     {
                         'pattern': r'Memory Usage:\s+(.*)',
-                        'output_column': 'Memory Usage %'
+                        'output_column': 'Memory Usage'
                     }
                 ]
             },
@@ -213,7 +213,7 @@ class PiolinkTifrontSSHHandler(CustomDeviceHandler):
         if self.device['connection_type'].lower() != 'ssh':
             raise ValueError("PiolinkTifrontSSHHandler는 SSH 연결만 지원합니다")
             
-        self.logger.debug(f"Piolink Tifront 장비 SSH 접속 시작: {self.device['ip']}")
+        self.logger.debug("Piolink Tifront 장비 SSH 접속 시작: %s", self.device['ip'])
         
         try:
             self.ssh = paramiko.SSHClient()
@@ -240,14 +240,14 @@ class PiolinkTifrontSSHHandler(CustomDeviceHandler):
                 # Find prompt from the last line
                 last_line = output.strip().splitlines()[-1]
                 self.prompt = last_line.strip()
-                self.logger.debug(f"Piolink Tifront 접속 성공 및 프롬프트 확인: {self.prompt}")
+                self.logger.debug("Piolink Tifront 접속 성공 및 프롬프트 확인: %s", self.prompt)
                 return True
             else:
                 self.logger.error("Piolink Tifront 접속 실패: 프롬프트를 찾을 수 없습니다.")
                 raise ConnectionError("Piolink Tifront 접속 실패: 프롬프트를 찾을 수 없습니다.")
 
         except Exception as e:
-            self.logger.error(f"Piolink Tifront SSH 접속 실패: {str(e)}")
+            self.logger.error("Piolink Tifront SSH 접속 실패: %s", e)
             if self.ssh:
                 self.ssh.close()
             raise
@@ -264,7 +264,7 @@ class PiolinkTifrontSSHHandler(CustomDeviceHandler):
 
     def enable(self):
         """특권 모드 진입"""
-        self.logger.debug(f"Piolink Tifront enable 모드 진입 시도: {self.device['ip']}")
+        self.logger.debug("Piolink Tifront enable 모드 진입 시도: %s", self.device['ip'])
         
         self.channel.send('\n')
         time.sleep(0.5)
@@ -290,7 +290,7 @@ class PiolinkTifrontSSHHandler(CustomDeviceHandler):
             last_line = output.strip().splitlines()[-1] if output.strip() else ''
             if "#" in last_line:
                 self.prompt = last_line.strip()
-                self.logger.debug(f"특권 모드 진입 성공. 새 프롬프트: {self.prompt}")
+                self.logger.debug("특권 모드 진입 성공. 새 프롬프트: %s", self.prompt)
             else:
                 self.logger.warning("특권 모드 진입에 실패했을 수 있습니다.")
 
@@ -306,7 +306,7 @@ class PiolinkTifrontSSHHandler(CustomDeviceHandler):
         if command == 'show_log_user_this_month':
             # 연도 경계 감지를 위해 전체 로그를 본다 (include 제거)
             actual_command = 'show log user'
-            self.logger.debug(f"Dynamic command generated: {actual_command}")
+            self.logger.debug("Dynamic command generated: %s", actual_command)
 
         if timeout is None:
             timeout = 20
@@ -334,7 +334,7 @@ class PiolinkTifrontSSHHandler(CustomDeviceHandler):
                 if self.prompt and self.prompt in full_output:
                     break
         else:
-            self.logger.warning(f"명령어 실행 시간 초과 또는 프롬프트를 찾을 수 없음: {actual_command}")
+            self.logger.warning("명령어 실행 시간 초과 또는 프롬프트를 찾을 수 없음: %s", actual_command)
 
         output = full_output
         lines = output.splitlines()
@@ -356,7 +356,7 @@ class PiolinkTifrontSSHHandler(CustomDeviceHandler):
 
     def disconnect(self):
         """SSH 연결 종료"""
-        self.logger.debug(f"Piolink Tifront SSH 연결 종료: {self.device['ip']}")
+        self.logger.debug("Piolink Tifront SSH 연결 종료: %s", self.device['ip'])
         if self.channel:
             self.channel.close()
         if self.ssh:

@@ -126,7 +126,7 @@ UBIQUOSS_PARSING_RULES = {
             },
             'show cpu usage': {
                 'custom_parser': 'parsing_ubiquoss_cpu_usage',
-                'output_column': 'CPU Usage %'
+                'output_column': 'CPU Usage'
             },
             'show memory usage': { # 명령어 키 및 파싱 규칙 변경
                 'patterns': [
@@ -138,7 +138,7 @@ UBIQUOSS_PARSING_RULES = {
                         'process': { # Memory Usage % 계산 추가
                             'type': 'calculate_usage_from_available',
                             'input_column': 'Memory Available %', # 이 값을 사용
-                            'output_column': 'Memory Usage %'
+                            'output_column': 'Memory Usage'
                         }
                     }
                 ]
@@ -184,7 +184,7 @@ class UbiquossE4020SSHHandler(CustomDeviceHandler):
         if self.device['connection_type'].lower() != 'ssh':
             raise ValueError("UbiquossE4020SSHHandler는 SSH 연결만 지원합니다")
         
-        self.logger.debug(f"Ubiquoss E4020 SSH 접속 시작: {self.device['ip']}")
+        self.logger.debug("Ubiquoss E4020 SSH 접속 시작: %s", self.device['ip'])
         
         try:
             self.ssh = paramiko.SSHClient()
@@ -220,18 +220,18 @@ class UbiquossE4020SSHHandler(CustomDeviceHandler):
             # 최종 프롬프트 확인
             if output.strip().endswith('>'):
                 self.prompt_char = '>'
-                self.logger.info(f"Ubiquoss E4020 SSH 초기 프롬프트 '{self.prompt_char}' 확인")
+                self.logger.info("Ubiquoss E4020 SSH 초기 프롬프트 '%s' 확인", self.prompt_char)
                 return True
             elif output.strip().endswith('#'):
                 self.prompt_char = '#'
-                self.logger.info(f"Ubiquoss E4020 SSH 초기 프롬프트 '{self.prompt_char}' 확인 (이미 enable 모드)")
+                self.logger.info("Ubiquoss E4020 SSH 초기 프롬프트 '%s' 확인 (이미 enable 모드)", self.prompt_char)
                 return True
             else:
-                self.logger.error(f"Ubiquoss E4020 SSH 초기 프롬프트를 확인할 수 없습니다. 최종 출력: {output}")
+                self.logger.error("Ubiquoss E4020 SSH 초기 프롬프트를 확인할 수 없습니다. 최종 출력: %s", output)
                 raise ConnectionError("Ubiquoss E4020 SSH 초기 프롬프트 확인 실패")
 
         except Exception as e:
-            self.logger.error(f"Ubiquoss E4020 SSH 접속 실패: {str(e)}")
+            self.logger.error("Ubiquoss E4020 SSH 접속 실패: %s", e)
             if self.ssh:
                 self.ssh.close()
             raise
@@ -248,7 +248,7 @@ class UbiquossE4020SSHHandler(CustomDeviceHandler):
     
     def enable(self):
         """특권 모드 진입"""
-        self.logger.debug(f"Ubiquoss E4020 enable 모드 진입 시도: {self.device['ip']}")
+        self.logger.debug("Ubiquoss E4020 enable 모드 진입 시도: %s", self.device['ip'])
         if self.prompt_char == '#':
             self.logger.info("이미 특권 모드(#)입니다.")
             # 페이징 비활성화 시도 (이미 # 모드일 경우도 대비)
@@ -293,10 +293,10 @@ class UbiquossE4020SSHHandler(CustomDeviceHandler):
                 self.log_output("terminal length 0 명령어 실행 시도", self._read_channel())
                 return True
             else:
-                self.logger.error(f"Enable 모드 진입 실패: # 프롬프트를 찾을 수 없습니다. 최종 출력: {final_output}")
+                self.logger.error("Enable 모드 진입 실패: # 프롬프트를 찾을 수 없습니다. 최종 출력: %s", final_output)
                 return False
         else:
-            self.logger.error(f"Enable 모드 진입 실패: 'Password:' 프롬프트를 찾을 수 없습니다. 출력: {output}")
+            self.logger.error("Enable 모드 진입 실패: 'Password:' 프롬프트를 찾을 수 없습니다. 출력: %s", output)
             return False
     
     def send_command(self, command, timeout=None):
@@ -330,7 +330,7 @@ class UbiquossE4020SSHHandler(CustomDeviceHandler):
 
                 while not self.channel.recv_ready():
                     if (time.time() - wait_start_time) > poll_timeout_for_next_page:
-                        self.logger.info(f"페이징: 다음 페이지 데이터 대기 시간 초과 ({poll_timeout_for_next_page}s).")
+                        self.logger.info("페이징: 다음 페이지 데이터 대기 시간 초과 (%ss).", poll_timeout_for_next_page)
                         break 
                     time.sleep(0.01) 
                 
@@ -389,7 +389,7 @@ class UbiquossE4020SSHHandler(CustomDeviceHandler):
     
     def disconnect(self):
         """SSH 연결 종료"""
-        self.logger.debug(f"Ubiquoss E4020 SSH 연결 종료 시도: {self.device['ip']}")
+        self.logger.debug("Ubiquoss E4020 SSH 연결 종료 시도: %s", self.device['ip'])
         if self.channel:
             try:
                 # 채널을 통해 exit 명령어 전송 (선택 사항, 이미 셸이므로 큰 의미 없을 수 있음)
@@ -398,13 +398,13 @@ class UbiquossE4020SSHHandler(CustomDeviceHandler):
                 self.channel.close()
                 self.logger.debug("SSH 채널 닫힘.")
             except Exception as e:
-                self.logger.warning(f"SSH 채널 닫기 중 오류: {str(e)}")
+                self.logger.warning("SSH 채널 닫기 중 오류: %s", e)
         if self.ssh:
             try:
                 self.ssh.close()
                 self.logger.debug("SSH 연결 닫힘.")
             except Exception as e:
-                self.logger.warning(f"SSH 연결 닫기 중 오류: {str(e)}")
+                self.logger.warning("SSH 연결 닫기 중 오류: %s", e)
         
         self.channel = None
         self.ssh = None
@@ -427,7 +427,7 @@ class UbiquossE4020Handler(CustomDeviceHandler):
         if self.device['connection_type'].lower() != 'telnet':
             raise ValueError("UbiquossE4020Handler는 텔넷 연결만 지원합니다")
         
-        self.logger.debug(f"유비쿼스 장비 Telnet 접속 시작: {self.device['ip']}")
+        self.logger.debug("유비쿼스 장비 Telnet 접속 시작: %s", self.device['ip'])
         
         self.tn = telnetlib.Telnet(self.device['ip'], port=self.device['port'], timeout=self.timeout)
         

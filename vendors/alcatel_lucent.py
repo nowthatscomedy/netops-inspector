@@ -259,11 +259,11 @@ ALCATEL_LUCENT_PARSING_RULES = {
             },
             'show health all cpu': {
                 'custom_parser': 'parsing_alcatel_cpu',
-                'output_column': 'CPU Usage %'
+                'output_column': 'CPU Usage'
             },
             'show health all memory': {
                 'custom_parser': 'parsing_alcatel_memory',
-                'output_column': 'Memory Usage %'
+                'output_column': 'Memory Usage'
             },
             'show chassis': {
                 'patterns': [
@@ -317,11 +317,11 @@ ALCATEL_LUCENT_PARSING_RULES = {
             },
             'show health all cpu': {
                 'custom_parser': 'parsing_alcatel_cpu',
-                'output_column': 'CPU Usage %'
+                'output_column': 'CPU Usage'
             },
             'show health all memory': {
                 'custom_parser': 'parsing_alcatel_memory',
-                'output_column': 'Memory Usage %'
+                'output_column': 'Memory Usage'
             },
             'show chassis': {
                 'patterns': [
@@ -353,7 +353,7 @@ class AlcatelLucentHandler(CustomDeviceHandler):
     
     def connect(self):
         """SSH로 장비에 연결"""
-        self.logger.debug(f"Alcatel-Lucent 장비 SSH 접속 시작: {self.device['ip']}")
+        self.logger.debug("Alcatel-Lucent 장비 SSH 접속 시작: %s", self.device['ip'])
         
         try:
             # SSH 클라이언트 초기화
@@ -384,18 +384,18 @@ class AlcatelLucentHandler(CustomDeviceHandler):
             if ">" in output or "#" in output:
                 last_line = output.splitlines()[-1] if output.splitlines() else ""
                 self.prompt = last_line.strip()
-                self.logger.debug(f"프롬프트 설정: {self.prompt}")
+                self.logger.debug("프롬프트 설정: %s", self.prompt)
             
             # 로그인 성공 확인
             if ">" in output or "#" in output:
-                self.logger.debug(f"Alcatel-Lucent SSH 접속 성공: {self.device['ip']}")
+                self.logger.debug("Alcatel-Lucent SSH 접속 성공: %s", self.device['ip'])
                 return True
             else:
-                self.logger.warning(f"Alcatel-Lucent SSH 접속 상태 불명확: {self.device['ip']}")
+                self.logger.warning("Alcatel-Lucent SSH 접속 상태 불명확: %s", self.device['ip'])
                 return False
             
         except Exception as e:
-            self.logger.error(f"Alcatel-Lucent SSH 접속 실패: {str(e)}")
+            self.logger.error("Alcatel-Lucent SSH 접속 실패: %s", e)
             if self.session_log_file:
                 with open(self.session_log_file, 'a', encoding='utf-8') as log:
                     log.write(f"\n접속 실패: {str(e)}\n")
@@ -420,7 +420,7 @@ class AlcatelLucentHandler(CustomDeviceHandler):
     
     def enable(self):
         """특권 모드 진입 - Alcatel은 로그인 후 특별한 enable 명령 필요 없음"""
-        self.logger.debug(f"Alcatel-Lucent는 별도의 enable 명령이 필요 없음: {self.device['ip']}")
+        self.logger.debug("Alcatel-Lucent는 별도의 enable 명령이 필요 없음: %s", self.device['ip'])
         
         return True
     
@@ -470,7 +470,7 @@ class AlcatelLucentHandler(CustomDeviceHandler):
             return result
             
         except Exception as e:
-            self.logger.error(f"명령어 실행 실패 ({command}): {str(e)}")
+            self.logger.error("명령어 실행 실패 (%s): %s", command, e)
             return f"Error executing command: {str(e)}"
     
     def disconnect(self):
