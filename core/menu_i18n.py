@@ -15,12 +15,12 @@ logger = logging.getLogger(__name__)
 console = Console()
 
 _LANGUAGE_LABELS: dict[str, str] = {
-    "ko": "Korean (ko)",
     "en": "English (en)",
+    "ko": "Korean (ko)",
     "ja": "Japanese (ja)",
     "es": "Spanish (es)",
-    "pt-BR": "Portuguese-BR (pt-BR)",
-    "zh-CN": "Chinese-Simplified (zh-CN)",
+    "pt-BR": "Portuguese (Brazil) (pt-BR)",
+    "zh-CN": "Chinese (Simplified) (zh-CN)",
 }
 
 

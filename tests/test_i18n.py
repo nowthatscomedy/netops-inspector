@@ -21,7 +21,7 @@ def test_translate_returns_korean_text_when_locale_is_ko() -> None:
 
 
 def test_translate_falls_back_to_english_when_locale_file_is_missing() -> None:
-    set_locale("ja", "en")
+    set_locale("xx", "en")
     assert t("main.shutdown") == "Program terminated."
 
 

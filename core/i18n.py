@@ -11,7 +11,7 @@ from core.path_utils import get_app_dir
 logger = logging.getLogger(__name__)
 
 DEFAULT_LANGUAGE = "en"
-SUPPORTED_LANGUAGES: tuple[str, ...] = ("ko", "en", "ja", "es", "pt-BR", "zh-CN")
+SUPPORTED_LANGUAGES: tuple[str, ...] = ("en", "ko", "ja", "es", "pt-BR", "zh-CN")
 _LANGUAGE_INDEX = {code.casefold(): code for code in SUPPORTED_LANGUAGES}
 
 _active_language = DEFAULT_LANGUAGE

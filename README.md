@@ -1,4 +1,6 @@
-﻿# NetOps Inspector
+# NetOps Inspector
+
+Language: [English](README.md) | [한국어](docs/README.ko.md) | [日本語](docs/README.ja.md) | [Español](docs/README.es.md) | [Português (Brasil)](docs/README.pt-BR.md) | [简体中文](docs/README.zh-CN.md)
 
 NetOps Inspector is a CLI tool for multi-vendor network device inspection and configuration backup.
 It reads device inventories from Excel files, connects via SSH/Telnet, runs inspection commands, parses outputs, and writes result workbooks.
@@ -14,7 +16,7 @@ It reads device inventories from Excel files, connects via SSH/Telnet, runs insp
 - Session log files per device
 - Result workbook generation with configurable column alias/order
 - User-defined parsing and command extensions via `custom_rules.yaml`
-- i18n-ready UI/messages (`en`, `ko` implemented; other language codes supported with fallback)
+- i18n-ready UI/messages (`en`, `ko`, `ja`, `es`, `pt-BR`, `zh-CN`)
 
 ## Supported Vendors (Current Modules)
 
@@ -131,8 +133,8 @@ column_aliases:
 
 Language codes currently accepted:
 
-- `ko`
 - `en`
+- `ko`
 - `ja`
 - `es`
 - `pt-BR`
@@ -142,8 +144,21 @@ Translation files currently shipped:
 
 - `locales/en.yaml`
 - `locales/ko.yaml`
+- `locales/ja.yaml`
+- `locales/es.yaml`
+- `locales/pt-BR.yaml`
+- `locales/zh-CN.yaml`
 
-If the selected locale file or key is missing, messages fall back to `fallback_language`, then to English.
+Unsupported language codes are normalized to `en`.
+If a translation key is missing, messages fall back to `fallback_language`, then to English.
+
+## Multilingual README
+
+- Korean: `docs/README.ko.md`
+- Japanese: `docs/README.ja.md`
+- Spanish: `docs/README.es.md`
+- Portuguese (Brazil): `docs/README.pt-BR.md`
+- Simplified Chinese: `docs/README.zh-CN.md`
 
 ## Custom Rules (`custom_rules.yaml`)
 
