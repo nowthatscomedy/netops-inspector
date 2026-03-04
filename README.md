@@ -1,381 +1,198 @@
-﻿# ?ㅽ듃?뚰겕 ?λ퉬 ?먭? 諛?諛깆뾽 ?먮룞???꾧뎄
+﻿# NetOps Inspector
 
-?묒?濡?愿由ы븯???λ퉬 紐⑸줉???쎌뼱 SSH/Telnet?쇰줈 ?묒냽?섍퀬, ?먭? 寃곌낵? ?ㅼ젙 諛깆뾽???먮룞?쇰줈 ?앹꽦?섎뒗 Python ?꾧뎄?낅땲??
+NetOps Inspector is a CLI tool for multi-vendor network device inspection and configuration backup.
+It reads device inventories from Excel files, connects via SSH/Telnet, runs inspection commands, parses outputs, and writes result workbooks.
 
-## ?듭떖 湲곕뒫
+## Key Features
 
-- 踰ㅻ뜑 紐⑤뱢 ?먮룞 濡쒕뵫 諛??뺤옣 (`vendors/`??紐⑤뱢 異붽?)
-- ?먭?/諛깆뾽 紐⑤뱶 ?좏깮 ?ㅽ뻾 (?먭?留? 諛깆뾽留? ????
-- ?묒? 湲곕컲 ?λ퉬 愿由? ?뷀샇?붾맂 ?묒? ?뚯씪 吏??
-- ?ъ슜??紐낅졊 ?뚯씪 ?ㅽ뻾 (TXT/?묒? 紐낅졊 紐⑸줉)
-- SSH/Telnet 吏?? ?λ퉬蹂?而ㅼ뒪? ?몃뱾???깅줉
-- 蹂묐젹 泥섎━(理쒕? 10?), ?먭?/諛깆뾽 遺꾨━ 吏꾪뻾瑜??쒖떆 諛??몄뀡 濡쒓렇 遺꾨━
-- ?묒뾽 以??ㅼ떆媛?TUI ??쒕낫???λ퉬 吏꾪뻾瑜? ?깃났/?ㅽ뙣 移댁슫?? 理쒓렐 ?대깽??
-- TCP ?곌껐 ?ъ쟾 ?뚯뒪??諛??ъ떆??諛깆삤??
-- 寃곌낵 ?묒? 由ы룷???앹꽦 諛??ㅽ뙣 ??ぉ ?섏씠?쇱씠??
-- 肄섏넄 濡쒓렇 ?덈꺼 諛??먭? ?쒖쇅 ??ぉ ?ㅼ젙
-- ?낅젰 ?곗씠???좏슚??寃利?(IP/?ы듃/踰ㅻ뜑/OS/以묐났)
+- Multi-vendor architecture (`vendors/` modules)
+- Inspection / Backup / Inspection+Backup execution modes
+- Batch custom command execution from TXT or Excel files
+- Excel input validation (required fields, duplicate IP, vendor/OS compatibility)
+- Retry and timeout controls for network I/O
+- Real-time terminal dashboard during execution
+- Session log files per device
+- Result workbook generation with configurable column alias/order
+- User-defined parsing and command extensions via `custom_rules.yaml`
+- i18n-ready UI/messages (`en`, `ko` implemented; other language codes supported with fallback)
 
-## 吏???λ퉬
+## Supported Vendors (Current Modules)
 
-| 踰ㅻ뜑 (Vendor) | ?댁쁺泥댁젣 (OS) |
-| :--- | :--- |
-| `alcatel-lucent` | `aos6`, `aos8` |
-| `axgate` | `axgate` |
-| `cisco` | `ios`, `ios-xe`, `legacy` |
-| `dayou` | `dsw` |
-| `handreamnet` | `hn` |
-| `juniper` | `junos` |
-| `nexg` | `vforce` |
-| `piolink` | `tifront` |
-| `ruckus` | `icx` |
-| `ubiquoss` | `e4020` |
+- `alcatel-lucent`
+- `aruba`
+- `axgate`
+- `cisco`
+- `dayou`
+- `handreamnet`
+- `juniper`
+- `nexg`
+- `piolink`
+- `ruckus`
+- `ubiquoss`
 
-## 鍮좊Ⅸ ?쒖옉
+Supported OS values depend on each vendor module and `vendors/__init__.py` command maps.
 
-### ?붽뎄?ы빆
-- Windows ?섍꼍 (?쇰? 湲곕뒫??`msvcrt` ?ъ슜)
+## Requirements
+
 - Python 3.10+
-- CLI ?명꽣?섏씠?? `rich` (異쒕젰 ?щ㎎?? + `InquirerPy` (??뷀삎 ?꾨＼?꾪듃)
+- Network reachability to target devices
+- Dependencies in `requirements.txt`
 
-### ?ㅼ튂
+Install:
+
 ```bash
 pip install -r requirements.txt
 ```
 
-## ?묒? ?낅젰 ?뺤떇
+## Quick Start
 
-?꾩닔 而щ읆:
-- `ip`, `vendor`, `os`, `connection_type`, `port`, `password`
+Run:
 
-?좏깮 而щ읆:
-- `username`, `enable_password`
-
-?덉떆:
-
-| ip | vendor | os | connection_type | port | username | password | enable_password |
-| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
-| 192.168.1.1 | cisco | ios | ssh | 22 | admin | cisco123 | class |
-| 10.0.0.5 | ruckus | icx | ssh | 22 | super | sp-pass | |
-
-吏???뺤옣??
-- ?λ퉬 紐⑸줉: `.xlsx`, `.xls`, `.xlsm`
-- ?뷀샇?붾맂 ?묒?? `msoffcrypto-tool` ?꾩슂
-
-?좏슚??寃利?
-- IP ?뺤떇, ?ы듃 踰붿쐞(1-65535), `ssh/telnet`留??덉슜
-- 踰ㅻ뜑/OS 吏??議고빀 寃利?諛?IP 以묐났 寃??
-- 而щ읆紐낆? ??뚮Ц??援щ텇 ?놁씠 ?몄떇
-
-## ?ъ슜 諛⑸쾿
-
-1) ?ㅽ뻾
 ```bash
 python main.py
 ```
 
-2) 硫붾돱 ?좏깮  
-?붿궡??Enter濡?硫붾돱瑜??좏깮?⑸땲?? ESC濡??ㅻ줈 ?뚯븘媛????덉뒿?덈떎.
+Main menu:
 
-3) ?묒? ?뚯씪 寃쎈줈 ?낅젰  
-Tab ?먮룞?꾩꽦??吏?먰븯硫? ?뷀샇?붾맂 ?뚯씪? ?뷀샇 ?낅젰???붿껌?⑸땲??
+1. Start inspection/backup
+2. Run custom command file
+3. Change settings
+4. Show Netmiko `device_type` list
+5. Exit
 
-4) ?ㅽ뻾 ?붿빟 ?뺤씤  
-?ㅽ뻾 ???λ퉬 ?? 紐⑤뱶, ?ㅼ젙媛??깆쓣 ?붿빟 ?⑤꼸濡??쒖떆?섍퀬 ?뺤씤???붿껌?⑸땲??
+## Excel Input Schema
 
-5) (?먭? ?ы븿 ?? 寃곌낵 ???쒖꽌 ?ㅼ젙  
-?묒뾽 ?ㅽ뻾 ?꾩뿉 ???쒖꽌瑜??뺥븷吏 臾살뒿?덈떎.  
-`y`瑜??좏깮?섎㈃ ?먭? ??ぉ 紐⑸줉?먯꽌 Enter濡??대룞 紐⑤뱶瑜??꾪솚?섏뿬 ?쒖꽌瑜?蹂寃쏀빀?덈떎.
+Required columns:
 
-6) ?묒뾽 ?ㅽ뻾 以??ㅼ떆媛???쒕낫???뺤씤  
-?ㅽ뻾???쒖옉?섎㈃ ?곕??먯뿉 ?ㅼ떆媛???쒕낫?쒓? ?쒖떆?섎ŉ, ?꾨즺 ???붿빟 ?붾㈃?쇰줈 ?꾪솚?⑸땲??
+- `ip`
+- `vendor`
+- `os`
+- `connection_type` (`ssh` or `telnet`)
+- `port`
+- `password`
 
-7) ?묒뾽 ?꾨즺 ??硫붿씤 硫붾돱濡??먮룞 蹂듦?  
-?щ윭 ?묒뾽???곗냽?쇰줈 ?ㅽ뻾?????덉뒿?덈떎.
+Optional columns:
 
-## ?ъ슜??紐낅졊 ?뚯씪 ?ㅽ뻾
+- `username`
+- `enable_password`
 
-硫붿씤 硫붾돱?먯꽌 "?ъ슜??紐낅졊 ?뚯씪 ?ㅽ뻾"???좏깮?섎㈃ ?λ퉬???꾩쓽 紐낅졊???쇨큵 ?ㅽ뻾?????덉뒿?덈떎.
+Example:
 
-- ?띿뒪???뚯씪: ??以꾩뿉 ??紐낅졊
-- ?묒? ?뚯씪: 泥?踰덉㎏ 而щ읆??紐낅졊????以꾩뵫 ?낅젰
-- 怨듬갚/鍮??됱? 臾댁떆?⑸땲??
-- ?щ윭 踰ㅻ뜑/OS媛 ?욎씤 寃쎌슦 寃쎄퀬媛 ?쒖떆?⑸땲??
+| ip | vendor | os | connection_type | port | username | password | enable_password |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| 192.168.1.10 | cisco | ios | ssh | 22 | admin | ****** | ****** |
+| 192.168.1.20 | ruckus | icx | ssh | 22 | super | ****** | |
 
-## ?ъ슜??而ㅼ뒪? 洹쒖튃 (紐낅졊???뚯떛 異붽?)
+## Settings (`settings.yaml`)
 
-?쇰컲 ?ъ슜?먭? 肄붾뱶 ?섏젙 ?놁씠 紐낅졊???뚯떛???뺤옣?????덈룄濡?`custom_rules.yaml`??吏?먰빀?덈떎.  
-(?섏쐞 ?명솚: `custom_rules.json`???쎌쓣 ???덉쑝硫? YAML ?뚯씪???곗꽑?⑸땲??)
+The file is auto-created in the app directory when missing.
 
-1) `custom_rules.example.yaml`??蹂듭궗??`custom_rules.yaml`濡???? 
-2) `inspection_commands`, `backup_commands`, `parsing_rules`瑜??꾩슂??留욊쾶 ?섏젙  
-3) ?λ퉬 紐⑸줉??`vendor`, `os` 媛믨낵 ?숈씪?섍쾶 ?낅젰
+Common keys:
 
-洹쒖튃 蹂묓빀 ?숈옉:
-- ?먭? 紐낅졊?? 湲곗〈 紐⑸줉 ?ㅼ뿉 **以묐났 ?놁씠 異붽?**
-- 諛깆뾽 紐낅졊?? ?숈씪 踰ㅻ뜑/OS媛 ?덉쑝硫?**?ъ슜??洹쒖튃?쇰줈 ??뼱?**
-- ?뚯떛 洹쒖튃: ?숈씪 踰ㅻ뜑/OS/紐낅졊?닿? ?덉쑝硫?**?ъ슜??洹쒖튃?쇰줈 ??뼱?**
-- ?곌껐 留ㅽ븨: ?숈씪 踰ㅻ뜑/OS媛 ?덉쑝硫?**?ъ슜??洹쒖튃?쇰줈 ??뼱?**
-- ?몃뱾???ㅼ젙: ?숈씪 踰ㅻ뜑/OS媛 ?덉쑝硫?**?ъ슜??洹쒖튃?쇰줈 ??뼱?**
+- `console_log_level`: `CRITICAL`/`ERROR`/`WARNING`/`INFO`/`DEBUG`
+- `max_retries`: max connect retries
+- `timeout`: connect timeout (seconds)
+- `max_workers`: parallel worker count
+- `inspection_excludes`: per vendor/OS parse exclusion map
 
-?덉떆:
-```yaml
-# ?먭? 紐낅졊??
-inspection_commands:
-  cisco:
-    ios:
-      - "show inventory"
-  user-custom:
-    custom-os:
-      - "show version"
-      - "show system"
+Inspection output keys:
 
-# 諛깆뾽 紐낅졊??
-backup_commands:
-  user-custom:
-    custom-os: "show running-config"
+- `column_aliases`: normalize inspection column names
+- `inspection_column_order_global`
+- `inspection_column_order_by_profile`
 
-# ?뚯떛 洹쒖튃 (?깃?荑쇳듃 ?덉뿉?쒕뒗 ?댁쨷 ?댁뒪耳?댄봽 遺덊븘??
-parsing_rules:
-  cisco:
-    ios:
-      "show inventory":
-        pattern: 'NAME:\s+\"(.*?)\"'
-        output_column: Inventory Name
-        first_match_only: true
-  user-custom:
-    custom-os:
-      "show version":
-        pattern: 'Version\s*[:=]\s*(\S+)'
-        output_column: Version
-        first_match_only: true
-      "show system":
-        patterns:
-          - pattern: 'Hostname\s*[:=]\s*(\S+)'
-            output_column: Hostname
-            first_match_only: true
-          - pattern: 'Uptime\s*[:=]\s*(.*)'
-            output_column: Uptime
-            first_match_only: true
+i18n keys:
 
-# Netmiko device_type 留ㅽ븨
-connection_overrides:
-  user-custom:
-    custom-os:
-      default: cisco_ios
-      telnet: cisco_ios_telnet
+- `language`
+- `fallback_language`
+- `input_column_aliases`
 
-# ?몃뱾???숈옉 而ㅼ뒪?곕쭏?댁쭠
-handler_overrides:
-  user-custom:
-    custom-os:
-      enable_command: enable
-      disable_paging_command: "terminal length 0"
-      prompt_pattern: '[>#]\s*$'
-      initial_delay: 1.0
-      command_delay: 2.0
-      read_delay: 0.2
-      more_pattern: "--More--"
-      more_response: " "
-      shell_width: 200
-      shell_height: 1000
-      skip_enable: false
-```
-
-?뺢퇋?쒗쁽???뚯떛 洹쒖튃:
-- `pattern`? 湲곕낯?곸쑝濡?**罹≪쿂 洹몃９ 1**??而щ읆 媛믪쑝濡??ъ슜
-- `patterns`???щ윭 而щ읆????紐낅졊?댁뿉??異붿텧?????ъ슜
-- `first_match_only`媛 ?놁쑝硫?紐⑤뱺 留ㅼ튂瑜?`,`濡??⑹묩?덈떎.
-
-> **YAML ??*: ?뺢퇋?앹? ?깃?荑쇳듃(`'...'`)濡?媛먯떥硫??댁쨷 ?댁뒪耳?댄봽媛 ?꾩슂 ?놁뒿?덈떎.  
-> JSON?먯꽌 `"hostname\\\\s+(\\\\S+)"`?대뜕 ?⑦꽩??YAML?먯꽌??`'hostname\s+(\S+)'`濡??????덉뒿?덈떎.
-
-?뺢퇋?쒗쁽??怨듭떇 臾몄꽌:
-- Python ?뺢퇋?쒗쁽??怨듭떇 臾몄꽌: https://docs.python.org/3/library/re.html
-- ?뺢퇋?쒗쁽??臾몃쾿 ?붿빟(Quick Reference): https://docs.python.org/3/howto/regex.html
-
-?뺢퇋?쒗쁽???댄빐瑜??뺣뒗 媛꾨떒 ?덉떆:
-- `Version\s*[:=]\s*(\S+)`
-  - `Version` ?ㅼ쓬??`:` ?먮뒗 `=`???섏삤怨? 洹???怨듬갚??嫄대꼫????**泥?踰덉㎏ 洹몃９**??媛믪쓣 罹≪쿂
-- `Hostname\s*[:=]\s*(\S+)`
-  - `Hostname: my-switch`?먯꽌 `my-switch`留?異붿텧
-- `Uptime\s*[:=]\s*(.*)`
-  - `Uptime: 12 days, 3 hours`?먯꽌 ?꾩껜 臾몄옄?댁쓣 異붿텧
-
-?먯＜ ?곕뒗 ?뺢퇋?쒗쁽??移섑듃?쒗듃:
-- `\s` 怨듬갚(?ㅽ럹?댁뒪, ????
-- `\S` 怨듬갚???꾨땶 臾몄옄
-- `.*` ?꾩쓽 臾몄옄 0媛??댁긽(理쒕???留롮씠)
-- `.+` ?꾩쓽 臾몄옄 1媛??댁긽
-- `(\S+)` 罹≪쿂 洹몃９(?뚯떛 寃곌낵濡???λ릺??遺遺?
-- `^` 以??쒖옉, `$` 以???
-
-而ㅼ뒪? 踰ㅻ뜑/OS ?ъ슜 諛⑸쾿:
-- ?묒? ?λ퉬 紐⑸줉?먯꽌 `vendor: user-custom`, `os: custom-os`泥섎읆 ?낅젰?섎㈃ ?⑸땲??
-- 而ㅼ뒪? 踰ㅻ뜑/OS媛 Netmiko?먯꽌 ?몄떇?섏? ?딆쑝硫?`connection_overrides`濡?`device_type`??吏?뺥븯?몄슂.
-  - `ssh`, `telnet` ?ㅻ? 蹂꾨룄濡??????덉쑝硫? ?놁쑝硫?`default`/`any`瑜??ъ슜?⑸땲??
-  - 吏?뺥븳 `device_type`??Netmiko???놁쑝硫?寃쎄퀬 濡쒓렇媛 異쒕젰?⑸땲??
-  - 吏??紐⑸줉? 硫붿씤 硫붾돱??"Netmiko device_type 紐⑸줉 蹂닿린"?먯꽌 ?뺤씤 媛?ν빀?덈떎.
-- 而ㅼ뒪? 踰ㅻ뜑/OS??湲곕낯?곸쑝濡?**Paramiko 怨듭슜 ?몃뱾??SSH)**濡??곌껐?⑸땲??
-  - `connection_type`??`telnet`?대㈃ Paramiko瑜??ъ슜?????놁쑝誘濡?Netmiko 寃쎈줈濡??쒕룄?⑸땲??
-
-?몃뱾???숈옉 而ㅼ뒪?곕쭏?댁쭠 (`handler_overrides`):
-- 而ㅼ뒪? 踰ㅻ뜑/OS??Paramiko 怨듭슜 ?몃뱾???숈옉???몃??곸쑝濡?議곗젙?????덉뒿?덈떎.
-- ?꾩슂????ぉ留?吏?뺥븯硫??섎㉧吏??湲곕낯媛믪씠 ?곸슜?⑸땲??
-
-| ??| ?ㅻ챸 | 湲곕낯媛?|
-| :--- | :--- | :--- |
-| `enable_command` | ?밴텒紐⑤뱶 吏꾩엯 紐낅졊??| `"enable"` |
-| `disable_paging_command` | ?섏씠吏?ㅼ씠??鍮꾪솢?깊솕 紐낅졊??(鍮?臾몄옄?댁씠硫??ㅽ뻾 ?덊븿) | `"terminal length 0"` |
-| `prompt_pattern` | ?꾨＼?꾪듃 媛먯? ?뺢퇋??| `"[>#]\\s*$"` |
-| `initial_delay` | ?묒냽 ???湲??쒓컙 (珥? | `1.0` |
-| `command_delay` | 紐낅졊???꾩넚 ???湲??쒓컙 (珥? | `2.0` |
-| `read_delay` | 梨꾨꼸 ?쎄린 媛꾧꺽 (珥? | `0.2` |
-| `more_pattern` | ?섏씠吏?ㅼ씠???⑦꽩 | `"--More--"` |
-| `more_response` | ?섏씠吏?ㅼ씠???묐떟 臾몄옄 | `" "` |
-| `shell_width` | SSH ??媛濡??ш린 | `200` |
-| `shell_height` | SSH ???몃줈 ?ш린 | `1000` |
-| `skip_enable` | enable 怨쇱젙 ?꾩껜 嫄대꼫?곌린 | `false` |
-
-## 寃곌낵臾?
-
-- ?먭? 寃곌낵: `results/inspection_results_YYYYMMDD_HHMMSS.xlsx`
-- 紐낅졊 ?ㅽ뻾 寃곌낵: `results/command_results_YYYYMMDD_HHMMSS.xlsx`
-- ?ㅼ젙 諛깆뾽: `backup/YYYYMMDD_HHMMSS/[IP]_[vendor]_[os].txt`
-- ?ㅽ뻾 濡쒓렇: `logs/netops_inspector_YYYYMMDD_HHMMSS.log`
-- ?몄뀡 濡쒓렇: `session_logs/YYYYMMDD_HHMMSS/[IP]_[vendor]_[os].log`
-
-?몄뀡 濡쒓렇?먮뒗 ?곌껐/紐낅졊 ?ㅽ뻾 寃곌낵媛 ?ы븿?섎ŉ, ?먭?/諛깆뾽 ?щ?? 愿怨꾩뾾???앹꽦?⑸땲??
-
-## ?곌껐 諛???꾩븘??湲곕낯媛?
-
-- ?곌껐 ??꾩븘?? 10珥? 理쒕? ?ъ떆?? 3??(吏??諛깆삤??
-- TCP ?곌껐 ?ъ쟾 ?뚯뒪?? 5珥?
-- 紐낅졊 ?쎄린 ??꾩븘?? ?먭? 30珥? 諛깆뾽 60珥?
-- 蹂묐젹 泥섎━: ?λ퉬 理쒕? 10?
-- ?먭?+諛깆뾽 紐⑤뱶: ?먭?/諛깆뾽???낅┰ ?곌껐濡??섑뻾?섎ŉ, ?먭? ?깃났 ?λ퉬留?諛깆뾽 ?湲곗뿴???щ씪媛 蹂묐젹 泥섎━?⑸땲??
-
-## ?ㅼ젙 (settings.yaml)
-
-?뚯씪???놁쑝硫??꾨줈?앺듃 猷⑦듃???먮룞 ?앹꽦?⑸땲??  
-(?섏쐞 ?명솚: `settings.json`???쎌쓣 ???덉쑝硫? YAML ?뚯씪???곗꽑?⑸땲??)
-
-- `console_log_level`: `CRITICAL`, `ERROR`, `WARNING`, `INFO`, `DEBUG`
-- `inspection_excludes`: 踰ㅻ뜑/OS/?뚯떛 ??ぉ ?⑥쐞 ?쒖쇅 ?ㅼ젙  
-  - 媛믪? `紐낅졊?? ?먮뒗 `紐낅졊??:而щ읆紐? ?뺥깭濡???λ맗?덈떎.
-  - ?ㅼ젙 硫붾돱?먯꽌 ?④퀎蹂?紐⑤몢 ?ы븿/?쒖쇅 吏??(?꾩껜/踰ㅻ뜑/OS), 蹂寃???`y/N` ?뺤씤
-- 諛곕꼫 臾멸뎄??`core/menu.py`??`BANNER_TEXT`?먯꽌 蹂寃쏀빀?덈떎.
-
-## ?꾨줈?앺듃 援ъ“
-
-```
-netops-inspector/
-?쒋?? main.py
-?쒋?? requirements.txt
-?쒋?? settings.yaml
-?쒋?? custom_rules.yaml
-?쒋?? custom_rules.example.yaml
-?쒋?? core/
-??  ?쒋?? inspector.py
-??  ?쒋?? file_handler.py
-??  ?쒋?? validator.py
-??  ?쒋?? settings.py
-??  ?쒋?? logging_config.py
-??  ?붴?? ui.py
-?쒋?? vendors/
-??  ?쒋?? __init__.py
-??  ?쒋?? base.py
-??  ?붴?? [vendor].py
-?쒋?? results/          # ?먮룞 ?앹꽦
-?쒋?? backup/           # ?먮룞 ?앹꽦
-?쒋?? logs/             # ?먮룞 ?앹꽦
-?붴?? session_logs/     # ?먮룞 ?앹꽦
-```
-
-## ?좉퇋 踰ㅻ뜑 異붽?
-
-1) `vendors/[踰ㅻ뜑紐?.py` ?앹꽦  
-2) ?꾨옒 ?뺤뀛?덈━ ?뺤쓽  
-   - `[踰ㅻ뜑紐?_INSPECTION_COMMANDS`
-   - `[踰ㅻ뜑紐?_BACKUP_COMMANDS`
-   - `[踰ㅻ뜑紐?_PARSING_RULES`
-3) ?꾩슂 ??而ㅼ뒪? ?뚯꽌 ?⑥닔 異붽? (`parsing_[踰ㅻ뜑]_[湲곕뒫]`)
-4) 濡쒓렇???뱀닔 泥섎━ ?꾩슂 ??`CustomDeviceHandler` ?곸냽 ??`@register_handler` ?깅줉
-
-## 濡쒓퉭
-
-- ?뚯씪 濡쒓렇????긽 DEBUG ?덈꺼濡???λ맗?덈떎.
-- 肄섏넄 濡쒓렇 ?덈꺼? `settings.yaml`??`console_log_level`濡?議곗젙?⑸땲??
-- 湲곕낯 濡쒓렇 ?щ㎎: `%(asctime)s | [%(threadName)s] | %(levelname)s | %(message)s`
-
-## EXE 鍮뚮뱶 (PyInstaller)
-
-### 媛꾪렪 鍮뚮뱶 (沅뚯옣)
-```powershell
-build.bat
-```
-
-### ?섎룞 鍮뚮뱶
-```powershell
-pip install pyinstaller
-pyinstaller NetOpsInspector.spec --noconfirm
-```
-
-### 諛고룷 援ъ“
-鍮뚮뱶 寃곌낵臾?`dist/NetOpsInspector.exe`? ?④퍡 ?꾨옒 ?뚯씪??媛숈? ?대뜑??諛곗튂?⑸땲??
-
-```
-諛고룷 ?대뜑/
-?쒋?? NetOpsInspector.exe   # ?꾩닔
-?쒋?? settings.yaml                # ?좏깮 (?놁쑝硫??먮룞 ?앹꽦)
-?쒋?? custom_rules.yaml            # ?좏깮 (而ㅼ뒪? 洹쒖튃 ?ъ슜 ??
-?붴?? custom_rules.example.yaml    # 李멸퀬??
-```
-
-> Python???ㅼ튂?섏? ?딆? PC?먯꽌??exe ?뚯씪留뚯쑝濡??ㅽ뻾?????덉뒿?덈떎.  
-> ?ㅽ뻾 ??`results/`, `backup/`, `logs/`, `session_logs/` ?붾젆?좊━媛 exe ?꾩튂 湲곗??쇰줈 ?먮룞 ?앹꽦?⑸땲??
-
-## ?쇱씠?좎뒪
-
-MIT License. ?먯꽭???댁슜? `LICENSE` 李멸퀬.
-## ?뚯뒪??
-
-?먮룞 寃利앹? `pytest` 湲곕컲?쇰줈 援ъ꽦?섏뼱 ?덉뒿?덈떎. ?ㅽ듃?뚰겕 ?λ퉬 ?곌껐? mock 泥섎━?섏뼱 ?ㅼ젣 ?λ퉬 ?놁씠 ?ㅽ뻾?????덉뒿?덈떎.
-
-```bash
-pip install -r requirements.txt
-python -m pytest
-```
-
-## 다국어(i18n) 지원 (v1)
-
-이제 `settings.yaml`에서 UI/검증/결과 엑셀 라벨 언어를 선택할 수 있습니다.
+Example:
 
 ```yaml
 language: en
 fallback_language: en
+console_log_level: WARNING
+max_retries: 3
+timeout: 10
+max_workers: 10
 
-# 입력 엑셀 컬럼 별칭 (다국어 헤더 -> 표준 컬럼)
 input_column_aliases:
-  "ip 주소": ip
-  "장비사": vendor
-  "접속방식": connection_type
+  "ip address": ip
+  "vendor name": vendor
+  "connection type": connection_type
+
+column_aliases:
+  "host name": Hostname
+  "cpu usage": CPU Usage
 ```
 
-지원 언어 코드:
-- `ko`, `en`, `ja`, `es`, `pt-BR`, `zh-CN`
+## i18n
 
-현재 번역 파일 제공:
+Language codes currently accepted:
+
+- `ko`
+- `en`
+- `ja`
+- `es`
+- `pt-BR`
+- `zh-CN`
+
+Translation files currently shipped:
+
 - `locales/en.yaml`
 - `locales/ko.yaml`
 
-나머지 언어 코드는 `fallback_language`(기본 `en`)로 자동 폴백됩니다.
+If the selected locale file or key is missing, messages fall back to `fallback_language`, then to English.
 
-입력 컬럼 처리 동작:
-- 검증 전 컬럼명을 정규화합니다.
-- 필수 컬럼 표준 키: `ip`, `vendor`, `os`, `connection_type`, `port`, `password`
-- `input_column_aliases`로 국가/언어별 컬럼명을 표준 키에 매핑할 수 있습니다.
+## Custom Rules (`custom_rules.yaml`)
 
-결과 엑셀 동작:
-- 기본 컬럼(`접속 상태`, `오류 메시지`)과 상태값(`성공/실패`)은 현재 언어 설정에 따라 표시됩니다.
+You can extend commands/parsers without changing Python code.
 
+Top-level sections:
+
+- `inspection_commands`
+- `backup_commands`
+- `parsing_rules`
+- `connection_overrides`
+- `handler_overrides`
+
+Template file:
+
+- `custom_rules.example.yaml`
+
+## Outputs
+
+Generated paths (timestamped):
+
+- Inspection results: `results/inspection_results_YYYYMMDD_HHMMSS.xlsx`
+- Custom command results: `results/command_results_YYYYMMDD_HHMMSS.xlsx`
+- Backup files: `backup/YYYYMMDD_HHMMSS/[IP]_[vendor]_[os].txt`
+- Run logs: `logs/netops_inspector_YYYYMMDD_HHMMSS.log`
+- Session logs: `session_logs/YYYYMMDD_HHMMSS/[IP]_[vendor]_[os].log`
+
+## Testing
+
+```bash
+python -m pytest
+```
+
+## Build (Windows)
+
+Use:
+
+```bat
+build.bat
+```
+
+The script expects `NetOpsInspector.spec` in the repository root.
+
+## Security Notes
+
+- Do not hardcode credentials in source files.
+- Prefer environment variables or secured secret delivery for runtime credentials.
+- Treat exported logs and result files as sensitive operational data.
+
+## License
+
+MIT License
