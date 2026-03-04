@@ -9,7 +9,7 @@ from rich.panel import Panel
 from rich.table import Table
 
 from core.i18n import list_supported_languages, set_locale, t
-from core.settings import AppSettings, save_settings
+from core.settings import AppSettings, SUPPORTED_OUTPUT_PLUGINS, save_settings
 
 logger = logging.getLogger(__name__)
 console = Console()
@@ -21,6 +21,12 @@ _LANGUAGE_LABELS: dict[str, str] = {
     "es": "Spanish (es)",
     "pt-BR": "Portuguese (Brazil) (pt-BR)",
     "zh-CN": "Chinese (Simplified) (zh-CN)",
+}
+
+_OUTPUT_PLUGIN_LABELS: dict[str, str] = {
+    "excel_results": "Excel (.xlsx)",
+    "json_results": "JSON (.json)",
+    "csv_results": "CSV (.csv)",
 }
 
 
@@ -48,8 +54,9 @@ def show_main_menu() -> str:
         {"name": t("menu.main.custom_commands"), "value": "2"},
         {"name": t("menu.main.settings"), "value": "3"},
         {"name": t("menu.main.netmiko_types"), "value": "4"},
+        {"name": t("menu.main.preflight"), "value": "5"},
         Separator(),
-        {"name": t("menu.main.exit"), "value": "5"},
+        {"name": t("menu.main.exit"), "value": "6"},
     ]
     return inquirer.select(
         message=t("menu.main.prompt"),
@@ -239,6 +246,36 @@ def select_language(current: str) -> str:
     return selected if selected is not None else current
 
 
+def select_output_plugin(current: str) -> str:
+    _clear()
+    console.print(
+        Panel(
+            t("menu.settings.output_plugin_desc", current=current),
+            title=f"[bold cyan]{t('menu.settings.output_plugin_title')}[/bold cyan]",
+            border_style="cyan",
+            expand=False,
+        ),
+    )
+    console.print()
+
+    choices = [
+        {
+            "name": f"{_OUTPUT_PLUGIN_LABELS.get(plugin, plugin)} ({plugin})",
+            "value": plugin,
+        }
+        for plugin in SUPPORTED_OUTPUT_PLUGINS
+    ]
+    choices.append(Separator())
+    choices.append({"name": t("menu.action.back"), "value": None})
+    selected = inquirer.select(
+        message=t("menu.settings.output_plugin"),
+        choices=choices,
+        default=current if current in SUPPORTED_OUTPUT_PLUGINS else SUPPORTED_OUTPUT_PLUGINS[0],
+        pointer=">",
+    ).execute()
+    return selected if selected is not None else current
+
+
 def show_settings_menu(settings: AppSettings) -> None:
     while True:
         _clear()
@@ -250,6 +287,7 @@ def show_settings_menu(settings: AppSettings) -> None:
         table.add_row(t("menu.settings.timeout"), f"{settings.timeout}")
         table.add_row(t("menu.settings.max_workers"), f"{settings.max_workers}")
         table.add_row(t("menu.settings.language"), settings.language)
+        table.add_row(t("menu.settings.output_plugin"), settings.output_plugin)
         exclude_count = sum(
             len(commands)
             for os_map in settings.inspection_excludes.values()
@@ -265,6 +303,7 @@ def show_settings_menu(settings: AppSettings) -> None:
             {"name": t("menu.settings.change_timeout"), "value": "timeout"},
             {"name": t("menu.settings.change_workers"), "value": "workers"},
             {"name": t("menu.settings.change_language"), "value": "language"},
+            {"name": t("menu.settings.change_output_plugin"), "value": "output_plugin"},
             {"name": t("menu.settings.manage_excludes"), "value": "excludes"},
             Separator(),
             {"name": t("menu.settings.back"), "value": None},
@@ -293,6 +332,9 @@ def show_settings_menu(settings: AppSettings) -> None:
             settings.language = select_language(settings.language)
             save_settings(settings)
             set_locale(settings.language, settings.fallback_language)
+        elif choice == "output_plugin":
+            settings.output_plugin = select_output_plugin(settings.output_plugin)
+            save_settings(settings)
         elif choice == "excludes":
             # Keep existing advanced exclude workflow from the legacy menu.
             from core import menu as legacy_menu

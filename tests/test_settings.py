@@ -27,6 +27,7 @@ def test_load_settings_normalizes_and_applies_fallbacks(
         "column_aliases": {" host name ": "Hostname"},
         "inspection_column_order_global": [" host name ", "CPU Usage", "", "Hostname"],
         "inspection_column_order_by_profile": {"Cisco|IOS": [" host name ", "CPU Usage"]},
+        "output_plugin": "invalid_plugin",
     }
     settings_file = tmp_path / "settings.yaml"
     settings_file.write_text(yaml.dump(raw_data), encoding="utf-8")
@@ -48,6 +49,7 @@ def test_load_settings_normalizes_and_applies_fallbacks(
     assert loaded.inspection_column_order_by_profile == {
         "cisco|ios": ["Hostname", "CPU Usage"]
     }
+    assert loaded.output_plugin == "excel_results"
 
 
 def test_resolve_inspection_column_order_prefers_global_profile_then_remaining() -> None:
@@ -80,6 +82,7 @@ def test_save_settings_writes_normalized_values(monkeypatch, tmp_path) -> None:
         column_aliases={" host name ": "Hostname"},
         inspection_column_order_global=[" host name ", "Hostname", "Version"],
         inspection_column_order_by_profile={"Cisco|IOS": [" host name ", "Version"]},
+        output_plugin="csv_results",
     )
 
     settings_module.save_settings(settings)
@@ -97,6 +100,7 @@ def test_save_settings_writes_normalized_values(monkeypatch, tmp_path) -> None:
     assert loaded.inspection_column_order_by_profile == {
         "cisco|ios": ["Hostname", "Version"]
     }
+    assert loaded.output_plugin == "csv_results"
     raw_text = (tmp_path / "settings.yaml").read_text(encoding="utf-8")
     assert re.search(r"console_log_level:\s+INFO", raw_text)
 

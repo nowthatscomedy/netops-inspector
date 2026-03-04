@@ -15,11 +15,15 @@ from core.plugin_platform.contracts import (
 )
 from core.plugin_platform.legacy import (
     CSV_INVENTORY_PLUGIN,
+    CSV_OUTPUT_PLUGIN,
     JSON_INVENTORY_PLUGIN,
+    JSON_OUTPUT_PLUGIN,
     CsvCliInventoryPlugin,
+    CsvResultOutputPlugin,
     ExcelCliInventoryPlugin,
     ExcelResultOutputPlugin,
     JsonCliInventoryPlugin,
+    JsonResultOutputPlugin,
     LegacyNetworkTaskPlugin,
     build_legacy_plugin_runtime,
 )
@@ -230,6 +234,15 @@ class _FakeInspector:
             }
         ]
 
+    def preflight_devices(self) -> None:
+        self.results = [
+            {
+                "ip": "192.0.2.10",
+                "status": "success",
+                "inspection_results": {"Preflight TCP": "Reachable"},
+            }
+        ]
+
     def get_available_inspection_columns(self, devices: list[dict[str, Any]]) -> list[str]:
         return ["Version", "Hostname"]
 
@@ -267,6 +280,35 @@ def test_legacy_task_plugin_runs_inspection_and_returns_metadata() -> None:
     assert result.metadata["profile_keys"] == ["cisco|ios"]
 
 
+def test_legacy_task_plugin_runs_preflight() -> None:
+    def inspector_factory(
+        output_excel: str,
+        run_timestamp: str,
+        settings: AppSettings,
+        *,
+        inspection_only: bool = False,
+        backup_only: bool = False,
+        status_callback: Any = None,
+    ) -> _FakeInspector:
+        return _FakeInspector(
+            output_excel=output_excel,
+            inspection_only=inspection_only,
+            backup_only=backup_only,
+        )
+
+    plugin = LegacyNetworkTaskPlugin(inspector_factory=inspector_factory)
+    request = TaskRequest(
+        task_name="preflight",
+        run_timestamp="20260305_120000",
+        settings=AppSettings(),
+        devices=[{"ip": "192.0.2.10"}],
+        options={"task_kind": "preflight"},
+    )
+    result = plugin.run(request)
+    assert result.inspection_only is True
+    assert result.results[0]["inspection_results"]["Preflight TCP"] == "Reachable"
+
+
 def test_excel_output_plugin_writes_results(monkeypatch) -> None:
     captured: dict[str, Any] = {}
 
@@ -290,3 +332,72 @@ def test_excel_output_plugin_writes_results(monkeypatch) -> None:
     plugin.write(request)
     assert captured["results"]
     assert captured["output_filepath"].endswith(".xlsx")
+
+
+def test_runtime_registers_json_and_csv_output_plugins() -> None:
+    runtime = build_legacy_plugin_runtime()
+    outputs = runtime.registry.list_outputs()
+    assert JSON_OUTPUT_PLUGIN in outputs
+    assert CSV_OUTPUT_PLUGIN in outputs
+
+
+def test_json_output_plugin_writes_json(tmp_path) -> None:
+    plugin = JsonResultOutputPlugin()
+    output_path = tmp_path / "inspection_results_20260305_120000.xlsx"
+    task_result = TaskResult(
+        task_name="inspection_backup",
+        output_excel=str(output_path),
+        results=[
+            {
+                "ip": "192.0.2.10",
+                "vendor": "cisco",
+                "os": "ios",
+                "status": "success",
+                "inspection_results": {"host name": "edge-sw-1"},
+            }
+        ],
+    )
+    plugin.write(
+        OutputRequest(
+            output_name=JSON_OUTPUT_PLUGIN,
+            settings=AppSettings(column_aliases={"host name": "Hostname"}),
+            task_result=task_result,
+        ),
+    )
+
+    written = output_path.with_suffix(".json")
+    assert written.exists()
+    data = json.loads(written.read_text(encoding="utf-8"))
+    assert data[0]["Hostname"] == "edge-sw-1"
+    assert task_result.output_excel.endswith(".json")
+
+
+def test_csv_output_plugin_writes_csv(tmp_path) -> None:
+    plugin = CsvResultOutputPlugin()
+    output_path = tmp_path / "inspection_results_20260305_120000.xlsx"
+    task_result = TaskResult(
+        task_name="inspection_backup",
+        output_excel=str(output_path),
+        results=[
+            {
+                "ip": "192.0.2.11",
+                "vendor": "cisco",
+                "os": "ios",
+                "status": "success",
+                "inspection_results": {"host name": "edge-sw-2"},
+            }
+        ],
+    )
+    plugin.write(
+        OutputRequest(
+            output_name=CSV_OUTPUT_PLUGIN,
+            settings=AppSettings(column_aliases={"host name": "Hostname"}),
+            task_result=task_result,
+        ),
+    )
+
+    written = output_path.with_suffix(".csv")
+    assert written.exists()
+    frame = pd.read_csv(written)
+    assert frame.loc[0, "Hostname"] == "edge-sw-2"
+    assert task_result.output_excel.endswith(".csv")

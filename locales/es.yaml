@@ -59,6 +59,7 @@ main:
     inspection: "Inspección"
     backup: "Respaldo"
     inspection_backup: "Inspección+Respaldo"
+    preflight: "Preflight"
   run_summary:
     title: "Resumen de ejecución"
     item: "Elemento"
@@ -131,6 +132,7 @@ menu:
     custom_commands: "Ejecutar archivo de comandos"
     settings: "Configuración"
     netmiko_types: "Mostrar lista de device_type de Netmiko"
+    preflight: "Ejecutar preflight"
     exit: "Salir"
   action:
     title: "Selección de tarea"
@@ -154,6 +156,7 @@ menu:
     timeout: "Tiempo de espera"
     max_workers: "Concurrencia"
     language: "Idioma"
+    output_plugin: "Formato de salida"
     excludes: "Exclusiones de inspección"
     options_prompt: "Configuración:"
     change_log_level: "Cambiar nivel de log en consola"
@@ -161,6 +164,7 @@ menu:
     change_timeout: "Cambiar tiempo de espera"
     change_workers: "Cambiar concurrencia"
     change_language: "Cambiar idioma"
+    change_output_plugin: "Cambiar formato de salida"
     manage_excludes: "Administrar exclusiones de inspección"
     back: "Atrás"
     keep_current_hint: "Enter para mantener el valor actual"
@@ -176,5 +180,7 @@ menu:
     workers_desc: "Actual: {current}\nNúmero de dispositivos procesados en paralelo."
     language_title: "Idioma"
     language_desc: "Actual: {current}\nIdioma de la UI para prompts y etiquetas de resultados."
+    output_plugin_title: "Formato de salida"
+    output_plugin_desc: "Actual: {current}\nSelecciona el formato del archivo de resultados."
   prompts:
     press_enter_back: "Presiona Enter para volver."

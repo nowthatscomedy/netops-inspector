@@ -11,6 +11,7 @@ from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import sys
 
+from core.credential_utils import CredentialResolutionError, is_env_reference, resolve_credential
 from core.settings import canonicalize_column_name, make_profile_key
 from vendors import (
     INSPECTION_COMMANDS,
@@ -413,14 +414,47 @@ class NetworkInspector:
     
     def _test_tcping(self, ip: str, port: int, timeout: int = 5) -> bool:
         """TCP 연결 테스트를 수행합니다."""
+        last_error: Exception | None = None
         try:
-            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
-                sock.settimeout(timeout)
-                result = sock.connect_ex((ip, port))
-                return result == 0
+            addr_info = socket.getaddrinfo(ip, port, socket.AF_UNSPEC, socket.SOCK_STREAM)
         except Exception as e:
             self.logger.error("TCP 연결 테스트 실패 (%s:%s): %s", ip, port, e)
             return False
+
+        for family, socktype, proto, _, sockaddr in addr_info:
+            try:
+                with socket.socket(family, socktype, proto) as sock:
+                    sock.settimeout(timeout)
+                    result = sock.connect_ex(sockaddr)
+                    if result == 0:
+                        return True
+            except Exception as exc:
+                last_error = exc
+                continue
+
+        if last_error is not None:
+            self.logger.error("TCP 연결 테스트 실패 (%s:%s): %s", ip, port, last_error)
+        return False
+
+    def _resolve_runtime_device(self, device: dict) -> dict:
+        runtime_device = dict(device)
+        runtime_device["username"] = resolve_credential(
+            runtime_device.get("username", ""),
+            field_name="username",
+            required=False,
+        )
+        runtime_device["password"] = resolve_credential(
+            runtime_device.get("password", ""),
+            field_name="password",
+            required=True,
+        )
+        if "enable_password" in runtime_device:
+            runtime_device["enable_password"] = resolve_credential(
+                runtime_device.get("enable_password", ""),
+                field_name="enable_password",
+                required=False,
+            )
+        return runtime_device
 
     def _connect_to_device(
         self,
@@ -446,6 +480,14 @@ class NetworkInspector:
         if session_log_suffix:
             session_log_filename = f"{session_log_filename}_{session_log_suffix}"
         session_log_file = os.path.join(self.session_log_dir, f"{session_log_filename}.log")
+
+        try:
+            runtime_device = self._resolve_runtime_device(device)
+        except CredentialResolutionError as exc:
+            self.logger.error("자격증명 해석 실패 (%s): %s", device.get("ip", "N/A"), exc)
+            return device, {"error": str(exc)}
+
+        device = runtime_device
         
         while retry_count < self.max_retries:
             try:
@@ -803,6 +845,133 @@ class NetworkInspector:
             f"점검: {insp_bar} | 백업: {bkup_bar} | [{stage}] {device_ip}: {status_msg}"
         )
 
+    def _preflight_device(self, device: dict) -> dict:
+        _start = time.monotonic()
+        device_index = device.get('device_index', 'NA')
+        threading.current_thread().name = f"Device-{device_index}:Preflight"
+        ip = str(device.get('ip', ''))
+        result = {
+            'ip': ip,
+            'vendor': device.get('vendor', ''),
+            'os': device.get('os', ''),
+            'status': 'success',
+            'error_message': '',
+            'inspection_results': {},
+        }
+
+        try:
+            try:
+                runtime_device = self._resolve_runtime_device(device)
+                credential_status = 'OK'
+            except CredentialResolutionError as exc:
+                result['status'] = 'error'
+                result['error_message'] = str(exc)
+                result['inspection_results'] = {
+                    'Preflight TCP': 'Not checked',
+                    'Credential Check': 'Failed',
+                }
+                return result
+
+            env_ref_used = any(
+                is_env_reference(device.get(field, ""))
+                for field in ("username", "password", "enable_password")
+            )
+
+            tcp_ok = self._test_tcping(
+                str(runtime_device.get('ip', ip)),
+                int(runtime_device.get('port', 0)),
+                timeout=self.timeout,
+            )
+
+            result['inspection_results'] = {
+                'Preflight TCP': 'Reachable' if tcp_ok else 'Unreachable',
+                'Credential Check': credential_status,
+                'Connection Type': str(runtime_device.get('connection_type', '')),
+                'Port': int(runtime_device.get('port', 0)),
+                'Credential Source': 'env reference' if env_ref_used else 'inline',
+            }
+
+            if not tcp_ok:
+                result['status'] = 'error'
+                result['error_message'] = "TCP 연결 테스트 실패"
+            return result
+        finally:
+            result['_elapsed_seconds'] = time.monotonic() - _start
+
+    def preflight_devices(self) -> None:
+        self.logger.info("사전 점검(preflight) 시작")
+        self._print_cli_status("사전 점검(preflight)을 시작합니다.")
+
+        total_devices = len(self.devices)
+        completed_devices = 0
+        success_count = 0
+        fail_count = 0
+        self._print_cli_status(f"총 장비 수: {total_devices}대")
+
+        with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
+            future_to_device = {
+                executor.submit(self._preflight_device, device): device
+                for device in self.devices
+            }
+
+            for future in as_completed(future_to_device):
+                device = future_to_device[future]
+                status_message = "성공"
+                is_success = True
+                result: dict | None = None
+                try:
+                    result = future.result()
+                    with self.results_lock:
+                        self.results.append(result)
+                    if result.get('status') == 'error':
+                        status_message = f"실패 - 오류: {result.get('error_message', '알 수 없는 오류')}"
+                        is_success = False
+                except Exception as e:
+                    self.logger.error("사전 점검 중 오류 발생: %s - %s", device['ip'], e)
+                    is_success = False
+                    result = {
+                        'ip': device['ip'],
+                        'vendor': device['vendor'],
+                        'os': device['os'],
+                        'status': 'error',
+                        'error_message': str(e),
+                        '_elapsed_seconds': 0,
+                    }
+                    with self.results_lock:
+                        self.results.append(result)
+                    status_message = f"실패 - 오류: {str(e)}"
+                finally:
+                    completed_devices += 1
+                    if is_success:
+                        success_count += 1
+                    else:
+                        fail_count += 1
+                    elapsed_sec = 0
+                    if isinstance(result, dict):
+                        raw_elapsed = result.get('_elapsed_seconds', 0)
+                        if isinstance(raw_elapsed, (int, float)):
+                            elapsed_sec = raw_elapsed
+                    self._emit_status_event(
+                        "device_complete",
+                        success=is_success,
+                        ip=device['ip'],
+                        vendor=device.get('vendor', ''),
+                        os=device.get('os', ''),
+                        elapsed_seconds=elapsed_sec,
+                    )
+                    progress = self._format_progress_bar(completed_devices, total_devices)
+                    self.logger.info("사전 점검 진행: %s | IP: %s | 상태: %s", progress, device['ip'], status_message)
+                    self._print_cli_status(
+                        f"진행: {progress} | IP: {device['ip']} | 상태: {status_message} | 성공 {success_count} / 실패 {fail_count}"
+                    )
+
+        with self.results_lock:
+            device_order = {device['ip']: i for i, device in enumerate(self.devices)}
+            self.results.sort(key=lambda r: device_order.get(r.get('ip'), float('inf')))
+
+        self.logger.info("사전 점검(preflight) 완료")
+        self._print_cli_status(f"사전 점검 완료 (성공 {success_count} / 실패 {fail_count})")
+
     def inspect_devices(self, backup_only: bool = False):
         """네트워크 장비를 점검하고 결과를 저장합니다."""
         if backup_only:
@@ -830,31 +999,40 @@ class NetworkInspector:
             for future in as_completed(future_to_device):
                 device = future_to_device[future]
                 status_message = "성공"
+                is_success = True
+                result: dict | None = None
                 try:
                     result = future.result()
                     with self.results_lock:
                         self.results.append(result)
                     if result.get('status') == 'error':
                         status_message = f"실패 - 오류: {result.get('error_message', '알 수 없는 오류')}"
+                        is_success = False
                 except Exception as e:
                     self.logger.error("장비 처리 중 오류 발생: %s - %s", device['ip'], e)
+                    is_success = False
+                    result = {
+                        'ip': device['ip'],
+                        'vendor': device['vendor'],
+                        'os': device['os'],
+                        'status': 'error',
+                        'error_message': str(e),
+                        '_elapsed_seconds': 0,
+                    }
                     with self.results_lock:
-                        self.results.append({
-                            'ip': device['ip'],
-                            'vendor': device['vendor'],
-                            'os': device['os'],
-                            'status': 'error',
-                            'error_message': str(e)
-                        })
+                        self.results.append(result)
                     status_message = f"실패 - 오류: {str(e)}"
                 finally:
                     completed_devices += 1
-                    is_success = status_message.startswith("성공")
                     if is_success:
                         success_count += 1
                     else:
                         fail_count += 1
-                    elapsed_sec = result.get('_elapsed_seconds', 0) if isinstance(result, dict) else 0
+                    elapsed_sec = 0
+                    if isinstance(result, dict):
+                        raw_elapsed = result.get('_elapsed_seconds', 0)
+                        if isinstance(raw_elapsed, (int, float)):
+                            elapsed_sec = raw_elapsed
                     self._emit_status_event(
                         "device_complete",
                         success=is_success,
@@ -900,31 +1078,40 @@ class NetworkInspector:
             for future in as_completed(future_to_device):
                 device = future_to_device[future]
                 status_message = "성공"
+                is_success = True
+                result: dict | None = None
                 try:
                     result = future.result()
                     with self.results_lock:
                         self.results.append(result)
                     if result.get('status') == 'error':
                         status_message = f"실패 - 오류: {result.get('error_message', '알 수 없는 오류')}"
+                        is_success = False
                 except Exception as e:
                     self.logger.error("장비 처리 중 오류 발생: %s - %s", device['ip'], e)
+                    is_success = False
+                    result = {
+                        'ip': device['ip'],
+                        'vendor': device['vendor'],
+                        'os': device['os'],
+                        'status': 'error',
+                        'error_message': str(e),
+                        '_elapsed_seconds': 0,
+                    }
                     with self.results_lock:
-                        self.results.append({
-                            'ip': device['ip'],
-                            'vendor': device['vendor'],
-                            'os': device['os'],
-                            'status': 'error',
-                            'error_message': str(e)
-                        })
+                        self.results.append(result)
                     status_message = f"실패 - 오류: {str(e)}"
                 finally:
                     completed_devices += 1
-                    is_success = status_message.startswith("성공")
                     if is_success:
                         success_count += 1
                     else:
                         fail_count += 1
-                    elapsed_sec = result.get('_elapsed_seconds', 0) if isinstance(result, dict) else 0
+                    elapsed_sec = 0
+                    if isinstance(result, dict):
+                        raw_elapsed = result.get('_elapsed_seconds', 0)
+                        if isinstance(raw_elapsed, (int, float)):
+                            elapsed_sec = raw_elapsed
                     self._emit_status_event(
                         "device_complete",
                         success=is_success,

@@ -55,6 +55,7 @@ main:
     inspection: 检查
     backup: 备份
     inspection_backup: 检查+备份
+    preflight: 预检
   run_summary:
     title: 运行总结
     item: 物品
@@ -125,6 +126,7 @@ menu:
     custom_commands: 运行命令文件
     settings: 设置
     netmiko_types: 显示 Netmiko device_type 列表
+    preflight: 运行预检
     exit: 出口
   action:
     title: 任务选择
@@ -148,6 +150,7 @@ menu:
     timeout: 暂停
     max_workers: 并发性
     language: 语言
+    output_plugin: 输出格式
     excludes: 检查不包括
     options_prompt: 设置：
     change_log_level: 更改控制台日志级别
@@ -155,6 +158,7 @@ menu:
     change_timeout: 更改超时
     change_workers: 更改并发数
     change_language: 更改语言
+    change_output_plugin: 更改输出格式
     manage_excludes: 管理检验排除
     back: 后退
     keep_current_hint: 输入以保持当前值
@@ -180,5 +184,9 @@ menu:
     language_desc: '当前：{current}
 
       提示和结果标签的 UI 语言。'
+    output_plugin_title: 输出格式
+    output_plugin_desc: '当前：{current}
+
+      选择结果文件格式。'
   prompts:
     press_enter_back: 按 Enter 返回。

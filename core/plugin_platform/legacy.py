@@ -5,12 +5,15 @@ import logging
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
-from zipfile import BadZipFile
 
 import pandas as pd
 
 from core.cli_input import get_filepath_from_cli
-from core.file_handler import read_excel_file, save_results_to_excel
+from core.file_handler import (
+    is_likely_encrypted_excel_error,
+    read_excel_file,
+    save_results_to_excel,
+)
 from core.i18n import t
 from core.inspector import NetworkInspector
 from core.plugin_platform.contracts import (
@@ -24,7 +27,7 @@ from core.plugin_platform.contracts import (
 )
 from core.plugin_platform.registry import PluginRegistry
 from core.plugin_platform.runtime import PluginRuntime
-from core.settings import AppSettings
+from core.settings import AppSettings, canonicalize_column_name
 from core.ui import get_password_from_cli
 from core.validator import validate_dataframe
 
@@ -36,6 +39,8 @@ JSON_INVENTORY_PLUGIN = "json_cli"
 LEGACY_INVENTORY_PLUGIN = EXCEL_INVENTORY_PLUGIN
 LEGACY_TASK_PLUGIN = "legacy_network_task"
 LEGACY_OUTPUT_PLUGIN = "excel_results"
+JSON_OUTPUT_PLUGIN = "json_results"
+CSV_OUTPUT_PLUGIN = "csv_results"
 
 
 def _default_inspector_factory(
@@ -81,7 +86,12 @@ class ExcelCliInventoryPlugin:
     def _read_excel_with_retry(self, filepath: str) -> pd.DataFrame | None:
         try:
             return self._excel_reader(filepath)
-        except (BadZipFile, Exception):
+        except Exception as exc:
+            if not is_likely_encrypted_excel_error(exc):
+                logger.error(
+                    t("file_handler.error.excel_read_failed", filepath=filepath, error=exc),
+                )
+                return None
             password = self._password_provider()
             if not password:
                 logger.warning(t("main.warning.password_not_entered"))
@@ -305,6 +315,23 @@ class LegacyNetworkTaskPlugin:
                 },
             )
 
+        if task_kind == "preflight":
+            output_excel = str(request.options.get("output_excel", "preflight_results.xlsx"))
+            inspector = self._build_inspector(
+                request,
+                output_excel=output_excel,
+                inspection_only=True,
+            )
+            inspector.preflight_devices()
+            return TaskResult(
+                task_name=request.task_name,
+                output_excel=inspector.output_excel,
+                results=inspector.results,
+                backup_dir=inspector.backup_dir,
+                session_log_dir=inspector.session_log_dir,
+                inspection_only=True,
+            )
+
         raise TaskExecutionError(f"Unsupported task kind: {task_kind}")
 
 
@@ -325,6 +352,90 @@ class ExcelResultOutputPlugin:
             raise OutputWriteError(str(exc)) from exc
 
 
+def _flatten_result_rows(
+    results: list[dict[str, Any]],
+    aliases: dict[str, str] | None = None,
+) -> list[dict[str, Any]]:
+    normalized_aliases = dict(aliases or {})
+    rows: list[dict[str, Any]] = []
+    for item in results:
+        row: dict[str, Any] = {
+            "ip": item.get("ip"),
+            "vendor": item.get("vendor"),
+            "os": item.get("os"),
+            "status": item.get("status"),
+            "error_message": item.get("error_message", ""),
+        }
+        inspection_results = item.get("inspection_results")
+        if isinstance(inspection_results, dict):
+            for key, value in inspection_results.items():
+                if key.startswith("error_") or key in {"error", "backup_error", "backup_file"}:
+                    continue
+                canonical_key = canonicalize_column_name(key, normalized_aliases)
+                if not canonical_key:
+                    continue
+                if canonical_key in row and row[canonical_key] not in (None, "") and value not in (None, ""):
+                    if str(row[canonical_key]) != str(value):
+                        row[canonical_key] = f"{row[canonical_key]}, {value}"
+                else:
+                    row[canonical_key] = value
+
+        backup_file = item.get("backup_file")
+        if backup_file:
+            row["backup_file"] = backup_file
+        rows.append(row)
+    return rows
+
+
+def _derive_output_filepath(source_path: str, extension: str) -> str:
+    source = Path(source_path)
+    if source.suffix.lower() == extension.lower():
+        output = source
+    else:
+        output = source.with_suffix(extension)
+    output.parent.mkdir(parents=True, exist_ok=True)
+    return str(output)
+
+
+class JsonResultOutputPlugin:
+    name = JSON_OUTPUT_PLUGIN
+
+    def write(self, request: OutputRequest) -> None:
+        if not request.task_result.results:
+            return
+        try:
+            output_path = _derive_output_filepath(request.task_result.output_excel, ".json")
+            rows = _flatten_result_rows(
+                request.task_result.results,
+                aliases=request.settings.column_aliases,
+            )
+            Path(output_path).write_text(
+                json.dumps(rows, ensure_ascii=False, indent=2),
+                encoding="utf-8",
+            )
+            request.task_result.output_excel = output_path
+        except Exception as exc:
+            raise OutputWriteError(str(exc)) from exc
+
+
+class CsvResultOutputPlugin:
+    name = CSV_OUTPUT_PLUGIN
+
+    def write(self, request: OutputRequest) -> None:
+        if not request.task_result.results:
+            return
+        try:
+            output_path = _derive_output_filepath(request.task_result.output_excel, ".csv")
+            rows = _flatten_result_rows(
+                request.task_result.results,
+                aliases=request.settings.column_aliases,
+            )
+            pd.DataFrame(rows).to_csv(output_path, index=False, encoding="utf-8-sig")
+            request.task_result.output_excel = output_path
+        except Exception as exc:
+            raise OutputWriteError(str(exc)) from exc
+
+
 def build_legacy_plugin_runtime() -> PluginRuntime:
     registry = PluginRegistry()
     registry.register_inventory(ExcelCliInventoryPlugin())
@@ -332,4 +443,6 @@ def build_legacy_plugin_runtime() -> PluginRuntime:
     registry.register_inventory(JsonCliInventoryPlugin())
     registry.register_task(LegacyNetworkTaskPlugin())
     registry.register_output(ExcelResultOutputPlugin())
+    registry.register_output(JsonResultOutputPlugin())
+    registry.register_output(CsvResultOutputPlugin())
     return PluginRuntime(registry)

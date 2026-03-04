@@ -26,6 +26,8 @@ This draft introduces a plugin-oriented execution model without breaking existin
     - `json_cli` inventory
     - `legacy_network_task` task
     - `excel_results` output
+    - `json_results` output
+    - `csv_results` output
 
 ## Runtime Flow
 
@@ -33,12 +35,13 @@ Current `main.py` now follows:
 
 1. `load_inventory(<plugin by file extension>)`
 2. `run_task(legacy_network_task)`
-3. `write_output(excel_results)`
+3. `write_output(<output plugin from settings.output_plugin>)`
 
 The old user-visible behavior is still preserved:
 
 - action menu (`inspection`, `backup`, `inspection+backup`)
 - custom command mode
+- preflight mode
 - run summary, confirmation, dashboard, and result summary
 
 ## Why This Is a Draft

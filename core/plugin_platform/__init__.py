@@ -9,8 +9,10 @@ from core.plugin_platform.contracts import (
 )
 from core.plugin_platform.legacy import (
     CSV_INVENTORY_PLUGIN,
+    CSV_OUTPUT_PLUGIN,
     EXCEL_INVENTORY_PLUGIN,
     JSON_INVENTORY_PLUGIN,
+    JSON_OUTPUT_PLUGIN,
     LEGACY_INVENTORY_PLUGIN,
     LEGACY_OUTPUT_PLUGIN,
     LEGACY_TASK_PLUGIN,
@@ -27,8 +29,10 @@ __all__ = [
     "TaskRequest",
     "TaskResult",
     "CSV_INVENTORY_PLUGIN",
+    "CSV_OUTPUT_PLUGIN",
     "EXCEL_INVENTORY_PLUGIN",
     "JSON_INVENTORY_PLUGIN",
+    "JSON_OUTPUT_PLUGIN",
     "LEGACY_INVENTORY_PLUGIN",
     "LEGACY_OUTPUT_PLUGIN",
     "LEGACY_TASK_PLUGIN",

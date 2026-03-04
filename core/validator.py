@@ -118,8 +118,14 @@ def validate_dataframe(
             t("validator.missing_columns", columns=", ".join(missing_columns)),
         )
 
-    if normalized_df["ip"].duplicated().any():
-        duplicated_ips = normalized_df[normalized_df["ip"].duplicated()]["ip"].astype(str).tolist()
+    normalized_df = normalized_df.copy()
+    normalized_df["ip"] = normalized_df["ip"].apply(
+        lambda value: str(value).strip() if not pd.isna(value) else value,
+    )
+    ip_keys = normalized_df["ip"].apply(lambda value: "" if pd.isna(value) else str(value))
+    duplicated_mask = ip_keys.duplicated(keep=False)
+    if duplicated_mask.any():
+        duplicated_ips = sorted({ip for ip in ip_keys[duplicated_mask].tolist() if ip})
         raise ValidationError(t("validator.duplicate_ips", ips=", ".join(duplicated_ips)))
 
     all_errors: list[str] = []

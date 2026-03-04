@@ -59,6 +59,7 @@ main:
     inspection: "Inspection"
     backup: "Backup"
     inspection_backup: "Inspection+Backup"
+    preflight: "Preflight"
   run_summary:
     title: "Run Summary"
     item: "Item"
@@ -131,6 +132,7 @@ menu:
     custom_commands: "Run Command File"
     settings: "Settings"
     netmiko_types: "Show Netmiko device_type List"
+    preflight: "Run Preflight Check"
     exit: "Exit"
   action:
     title: "Task Selection"
@@ -154,6 +156,7 @@ menu:
     timeout: "Timeout"
     max_workers: "Concurrency"
     language: "Language"
+    output_plugin: "Output Format"
     excludes: "Inspection Excludes"
     options_prompt: "Settings:"
     change_log_level: "Change Console Log Level"
@@ -161,6 +164,7 @@ menu:
     change_timeout: "Change Timeout"
     change_workers: "Change Concurrency"
     change_language: "Change Language"
+    change_output_plugin: "Change Output Format"
     manage_excludes: "Manage Inspection Excludes"
     back: "Back"
     keep_current_hint: "Enter to keep current value"
@@ -176,6 +180,8 @@ menu:
     workers_desc: "Current: {current}\nNumber of devices processed in parallel."
     language_title: "Language"
     language_desc: "Current: {current}\nUI language for prompts and result labels."
+    output_plugin_title: "Output Format"
+    output_plugin_desc: "Current: {current}\nSelect result file format."
   prompts:
     press_enter_back: "Press Enter to go back."
 

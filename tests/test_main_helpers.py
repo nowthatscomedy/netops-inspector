@@ -50,6 +50,23 @@ def test_read_excel_with_retry_returns_none_when_password_not_entered(monkeypatc
     assert result is None
 
 
+def test_read_excel_with_retry_does_not_prompt_on_non_encrypted_error(monkeypatch) -> None:
+    monkeypatch.setattr(
+        main,
+        "read_excel_file",
+        lambda filepath, password=None: (_ for _ in ()).throw(RuntimeError("sheet parse failed")),
+    )
+    monkeypatch.setattr(main, "is_likely_encrypted_excel_error", lambda exc: False)
+    monkeypatch.setattr(
+        main,
+        "get_password_from_cli",
+        lambda: (_ for _ in ()).throw(AssertionError("password prompt should not be called")),
+    )
+
+    result = main._read_excel_with_retry("devices.xlsx")
+    assert result is None
+
+
 def test_create_inspector_applies_settings_fields() -> None:
     settings = AppSettings(
         inspection_excludes={"cisco": {"ios": ["show version"]}},

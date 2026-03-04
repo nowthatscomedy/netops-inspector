@@ -5,7 +5,7 @@ Ubiquoss 장비의 명령어, 파싱 규칙, 핸들러 클래스를 제공합니
 지원 OS: e4020
 """
 
-import telnetlib
+from netmiko._telnetlib import telnetlib
 import time
 import logging
 from vendors.base import CustomDeviceHandler, register_handler

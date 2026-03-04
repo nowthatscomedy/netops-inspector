@@ -9,6 +9,7 @@ NetOps Inspector 是一款用于多厂商网络设备巡检与配置备份的 CL
 
 - 多厂商架构（`vendors/` 模块）
 - 巡检 / 备份 / 巡检+备份 执行模式
+- 预检（preflight）模式（清单/凭据引用/TCP 连通性检查）
 - 支持从 TXT 或 Excel 批量执行自定义命令
 - 清单输入校验（必填字段、重复 IP、vendor/OS 兼容性）
 - 网络 I/O 的重试与超时控制
@@ -60,7 +61,8 @@ python main.py
 2. 运行自定义命令文件
 3. 修改设置
 4. 显示 Netmiko `device_type` 列表
-5. 退出
+5. 运行预检
+6. 退出
 
 ## 清单输入结构
 
@@ -92,6 +94,12 @@ python main.py
 - `username`
 - `enable_password`
 
+凭据引用语法（可选）：
+
+- `username`、`password`、`enable_password` 支持 `env:环境变量名`
+- 示例：`password: env:NETOPS_DEVICE_PASSWORD`
+- 若引用的环境变量缺失或为空，该设备会被安全地标记为失败
+
 示例：
 
 | ip | vendor | os | connection_type | port | username | password | enable_password |
@@ -110,6 +118,7 @@ python main.py
 - `timeout`: 连接超时（秒）
 - `max_workers`: 并行 worker 数
 - `inspection_excludes`: 按 vendor/OS 的解析排除映射
+- `output_plugin`: `excel_results` | `json_results` | `csv_results`
 
 巡检输出相关键：
 
@@ -141,6 +150,8 @@ input_column_aliases:
 column_aliases:
   "host name": Hostname
   "cpu usage": CPU Usage
+
+output_plugin: excel_results
 ```
 
 ## i18n
@@ -196,6 +207,10 @@ column_aliases:
 
 - 巡检结果：`results/inspection_results_YYYYMMDD_HHMMSS.xlsx`
 - 自定义命令结果：`results/command_results_YYYYMMDD_HHMMSS.xlsx`
+- 预检结果：`results/preflight_results_YYYYMMDD_HHMMSS.xlsx`
+- 选择 `output_plugin` 后的 JSON/CSV 输出：
+  - `results/*_YYYYMMDD_HHMMSS.json`
+  - `results/*_YYYYMMDD_HHMMSS.csv`
 - 备份文件：`backup/YYYYMMDD_HHMMSS/[IP]_[vendor]_[os].txt`
 - 运行日志：`logs/netops_inspector_YYYYMMDD_HHMMSS.log`
 - 会话日志：`session_logs/YYYYMMDD_HHMMSS/[IP]_[vendor]_[os].log`

@@ -5,6 +5,7 @@ import logging
 import os
 from pathlib import Path
 from typing import Any
+from zipfile import BadZipFile
 
 import pandas as pd
 from openpyxl.styles import PatternFill
@@ -18,6 +19,25 @@ except ImportError:
     msoffcrypto = None
 
 logger = logging.getLogger(__name__)
+
+_ENCRYPTED_EXCEL_ERROR_MARKERS: tuple[str, ...] = (
+    "encrypted",
+    "password",
+    "decrypt",
+    "not a zip file",
+    "ole2",
+)
+
+
+def is_likely_encrypted_excel_error(exc: Exception) -> bool:
+    """Best-effort classifier for encrypted workbook read failures."""
+    if isinstance(exc, BadZipFile):
+        return True
+
+    message = str(exc).strip().lower()
+    if not message:
+        return False
+    return any(marker in message for marker in _ENCRYPTED_EXCEL_ERROR_MARKERS)
 
 
 def read_command_file(filepath: str) -> list[str]:

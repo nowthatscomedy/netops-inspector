@@ -4,7 +4,6 @@ import logging
 from collections.abc import Callable
 from datetime import datetime
 from pathlib import Path
-from zipfile import BadZipFile
 
 import pandas as pd
 from rich.console import Console
@@ -13,7 +12,11 @@ from rich.table import Table
 
 from core.cli_input import get_command_filepath_from_cli, get_filepath_from_cli
 from core.custom_exceptions import NetworkInspectorError
-from core.file_handler import read_command_file, read_excel_file
+from core.file_handler import (
+    is_likely_encrypted_excel_error,
+    read_command_file,
+    read_excel_file,
+)
 from core.i18n import set_locale, t
 from core.inspector import NetworkInspector
 from core.logging_config import init_logging
@@ -28,6 +31,8 @@ from core.plugin_platform import (
     CSV_INVENTORY_PLUGIN,
     EXCEL_INVENTORY_PLUGIN,
     JSON_INVENTORY_PLUGIN,
+    CSV_OUTPUT_PLUGIN,
+    JSON_OUTPUT_PLUGIN,
     LEGACY_OUTPUT_PLUGIN,
     LEGACY_TASK_PLUGIN,
     InventoryLoadError,
@@ -46,11 +51,22 @@ logger = logging.getLogger(__name__)
 console = Console()
 _PLUGIN_RUNTIME = build_legacy_plugin_runtime()
 
+_SUPPORTED_OUTPUT_PLUGINS = (
+    LEGACY_OUTPUT_PLUGIN,
+    JSON_OUTPUT_PLUGIN,
+    CSV_OUTPUT_PLUGIN,
+)
+
 
 def _read_excel_with_retry(filepath: str) -> pd.DataFrame | None:
     try:
         return read_excel_file(filepath)
-    except (BadZipFile, Exception):
+    except Exception as exc:
+        if not is_likely_encrypted_excel_error(exc):
+            logger.error(
+                t("file_handler.error.excel_read_failed", filepath=filepath, error=exc),
+            )
+            return None
         password = get_password_from_cli()
         if not password:
             logger.warning(t("main.warning.password_not_entered"))
@@ -60,6 +76,43 @@ def _read_excel_with_retry(filepath: str) -> pd.DataFrame | None:
         except Exception as exc:
             logger.error(t("main.warning.encrypted_excel_read_failed", error=exc))
             return None
+
+
+def _resolve_output_plugin_name(settings: AppSettings) -> str:
+    configured = str(getattr(settings, "output_plugin", LEGACY_OUTPUT_PLUGIN)).strip()
+    if not configured:
+        return LEGACY_OUTPUT_PLUGIN
+    available = set(_PLUGIN_RUNTIME.registry.list_outputs())
+    if configured not in available:
+        logger.warning("Unknown output plugin '%s'. Fallback to '%s'.", configured, LEGACY_OUTPUT_PLUGIN)
+        return LEGACY_OUTPUT_PLUGIN
+    if configured not in _SUPPORTED_OUTPUT_PLUGINS:
+        logger.warning("Unsupported output plugin '%s'. Fallback to '%s'.", configured, LEGACY_OUTPUT_PLUGIN)
+        return LEGACY_OUTPUT_PLUGIN
+    return configured
+
+
+def _write_output(
+    settings: AppSettings,
+    task_result: TaskResult,
+    *,
+    column_order: list[str] | None = None,
+) -> bool:
+    output_plugin = _resolve_output_plugin_name(settings)
+    try:
+        _PLUGIN_RUNTIME.write_output(
+            output_plugin,
+            OutputRequest(
+                output_name=output_plugin,
+                settings=settings,
+                task_result=task_result,
+                column_order=column_order,
+            ),
+        )
+        return True
+    except OutputWriteError as exc:
+        logger.error("%s", exc)
+        return False
 
 
 def _create_inspector(
@@ -244,17 +297,7 @@ def _run_custom_commands(settings: AppSettings) -> None:
         dashboard.mark_completed(t("main.info.dashboard_completed_note"))
         dashboard.stop()
 
-    try:
-        _PLUGIN_RUNTIME.write_output(
-            LEGACY_OUTPUT_PLUGIN,
-            OutputRequest(
-                output_name=LEGACY_OUTPUT_PLUGIN,
-                settings=settings,
-                task_result=task_result,
-            ),
-        )
-    except OutputWriteError as exc:
-        logger.error("%s", exc)
+    if not _write_output(settings, task_result):
         return
 
     _print_result_summary(task_result, log_file)
@@ -337,20 +380,62 @@ def _run_inspection_backup(settings: AppSettings) -> None:
         else:
             logger.info(t("main.warning.no_order_columns"))
 
-    try:
-        _PLUGIN_RUNTIME.write_output(
-            LEGACY_OUTPUT_PLUGIN,
-            OutputRequest(
-                output_name=LEGACY_OUTPUT_PLUGIN,
-                settings=settings,
-                task_result=task_result,
-                column_order=column_order,
-            ),
-        )
-    except OutputWriteError as exc:
-        logger.error("%s", exc)
+    if not _write_output(settings, task_result, column_order=column_order):
         return
 
+    _print_result_summary(task_result, log_file)
+
+
+def _run_preflight(settings: AppSettings) -> None:
+    mode_label = t("main.modes.preflight")
+    run_timestamp, log_file = _init_run(settings)
+    output_excel = "preflight_results.xlsx"
+
+    logger.info("RUN ID   : %s", run_timestamp)
+    logger.info("LOG FILE : %s", log_file)
+    logger.info("-----------------------------------------")
+    logger.info(t("main.info.mode_log_prefix", mode=mode_label))
+
+    try:
+        inventory_payload = _load_inventory_payload(settings)
+    except InventoryLoadError as exc:
+        logger.warning("%s", exc)
+        return
+
+    filepath = inventory_payload.filepath
+    devices = inventory_payload.devices
+    logger.info("INPUT   : %s", filepath)
+
+    _print_run_summary(mode_label, len(devices), filepath, settings, run_timestamp, log_file)
+    if not ask_yes_no(t("main.confirm.run_now"), default=True):
+        logger.info(t("main.info.job_cancelled"))
+        return
+
+    dashboard = TuiDashboard(mode_label, len(devices))
+    request = TaskRequest(
+        task_name="preflight",
+        run_timestamp=run_timestamp,
+        settings=settings,
+        devices=devices,
+        status_callback=dashboard.handle_event,
+        options={
+            "task_kind": "preflight",
+            "output_excel": output_excel,
+        },
+    )
+
+    dashboard.start()
+    try:
+        task_result = _PLUGIN_RUNTIME.run_task(LEGACY_TASK_PLUGIN, request)
+    except TaskExecutionError as exc:
+        logger.error("%s", exc)
+        return
+    finally:
+        dashboard.mark_completed(t("main.info.dashboard_completed_note"))
+        dashboard.stop()
+
+    if not _write_output(settings, task_result):
+        return
     _print_result_summary(task_result, log_file)
 
 
@@ -370,6 +455,8 @@ def main() -> None:
             elif menu_choice == "4":
                 show_netmiko_device_types()
             elif menu_choice == "5":
+                _run_preflight(settings)
+            elif menu_choice == "6":
                 console.print(f"[dim]{t('main.shutdown')}[/dim]")
                 return
     except KeyboardInterrupt:

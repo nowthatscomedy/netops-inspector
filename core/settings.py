@@ -20,6 +20,8 @@ REQUIRED_INPUT_COLUMNS: tuple[str, ...] = (
 )
 OPTIONAL_INPUT_COLUMNS: tuple[str, ...] = ("username", "enable_password")
 VALID_INPUT_COLUMNS: set[str] = set(REQUIRED_INPUT_COLUMNS + OPTIONAL_INPUT_COLUMNS)
+SUPPORTED_OUTPUT_PLUGINS: tuple[str, ...] = ("excel_results", "json_results", "csv_results")
+DEFAULT_OUTPUT_PLUGIN = "excel_results"
 
 _DEFAULT_INPUT_COLUMN_ALIASES: Dict[str, str] = {
     "ip address": "ip",
@@ -175,6 +177,7 @@ class AppSettings:
     column_aliases: Dict[str, str] = field(default_factory=dict)
     inspection_column_order_global: List[str] = field(default_factory=list)
     inspection_column_order_by_profile: Dict[str, List[str]] = field(default_factory=dict)
+    output_plugin: str = DEFAULT_OUTPUT_PLUGIN
 
 
 def get_settings_path() -> Path:
@@ -276,6 +279,9 @@ def load_settings() -> AppSettings:
         data.get("inspection_column_order_by_profile", {}),
         column_aliases,
     )
+    output_plugin = str(data.get("output_plugin", DEFAULT_OUTPUT_PLUGIN)).strip()
+    if output_plugin not in SUPPORTED_OUTPUT_PLUGINS:
+        output_plugin = DEFAULT_OUTPUT_PLUGIN
 
     return AppSettings(
         console_log_level=console_log_level.upper(),
@@ -289,6 +295,7 @@ def load_settings() -> AppSettings:
         column_aliases=column_aliases,
         inspection_column_order_global=inspection_column_order_global,
         inspection_column_order_by_profile=inspection_column_order_by_profile,
+        output_plugin=output_plugin,
     )
 
 
@@ -350,6 +357,9 @@ def save_settings(settings: AppSettings) -> None:
         column_aliases=aliases,
         inspection_column_order_global=global_order,
         inspection_column_order_by_profile=profile_orders,
+        output_plugin=settings.output_plugin
+        if isinstance(settings.output_plugin, str) and settings.output_plugin in SUPPORTED_OUTPUT_PLUGINS
+        else DEFAULT_OUTPUT_PLUGIN,
     )
 
     settings_path = get_settings_path()

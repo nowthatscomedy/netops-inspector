@@ -59,6 +59,7 @@ main:
     inspection: "점검"
     backup: "백업"
     inspection_backup: "점검+백업"
+    preflight: "사전 점검"
   run_summary:
     title: "실행 요약"
     item: "항목"
@@ -131,6 +132,7 @@ menu:
     custom_commands: "명령 파일 실행"
     settings: "설정"
     netmiko_types: "Netmiko device_type 목록 보기"
+    preflight: "사전 점검 실행"
     exit: "종료"
   action:
     title: "작업 선택"
@@ -154,6 +156,7 @@ menu:
     timeout: "타임아웃"
     max_workers: "동시 처리 수"
     language: "언어"
+    output_plugin: "결과 출력 형식"
     excludes: "점검 제외 항목"
     options_prompt: "설정:"
     change_log_level: "콘솔 로그 레벨 변경"
@@ -161,6 +164,7 @@ menu:
     change_timeout: "타임아웃 변경"
     change_workers: "동시 처리 수 변경"
     change_language: "언어 변경"
+    change_output_plugin: "결과 출력 형식 변경"
     manage_excludes: "점검 제외 관리"
     back: "뒤로가기"
     keep_current_hint: "현재 값 유지: Enter"
@@ -176,5 +180,7 @@ menu:
     workers_desc: "현재: {current}\n동시에 처리할 장비 수입니다."
     language_title: "언어"
     language_desc: "현재: {current}\n프롬프트와 결과 라벨에 사용할 언어입니다."
+    output_plugin_title: "결과 출력 형식"
+    output_plugin_desc: "현재: {current}\n결과 파일 형식을 선택하세요."
   prompts:
     press_enter_back: "Enter를 누르면 돌아갑니다."

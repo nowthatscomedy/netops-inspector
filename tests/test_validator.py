@@ -57,6 +57,33 @@ def test_validate_dataframe_raises_on_duplicate_ip(sample_device: dict[str, obje
     assert "192.0.2.10" in str(exc_info.value)
 
 
+def test_validate_dataframe_detects_duplicate_ip_after_strip() -> None:
+    df = pd.DataFrame(
+        [
+            {
+                "ip": "192.0.2.10 ",
+                "vendor": "cisco",
+                "os": "ios",
+                "connection_type": "ssh",
+                "port": 22,
+                "password": "pw",
+            },
+            {
+                "ip": "192.0.2.10",
+                "vendor": "cisco",
+                "os": "ios",
+                "connection_type": "ssh",
+                "port": 22,
+                "password": "pw",
+            },
+        ]
+    )
+
+    with pytest.raises(ValidationError) as exc_info:
+        validate_dataframe(df)
+    assert "192.0.2.10" in str(exc_info.value)
+
+
 def test_validate_dataframe_aggregates_row_errors(sample_device: dict[str, object]) -> None:
     ok_row = dict(sample_device)
     bad_ip_row = dict(sample_device)

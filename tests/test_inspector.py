@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import socket
 import time
 from typing import Any
 
@@ -161,3 +162,90 @@ def test_inspect_devices_sorts_results_by_input_order(
 
     inspector.inspect_devices()
     assert [row["ip"] for row in inspector.results] == ["192.0.2.11", "192.0.2.10"]
+
+
+def test_inspect_devices_handles_worker_exception_without_crashing(
+    inspector: NetworkInspector, monkeypatch
+) -> None:
+    devices = [
+        {
+            "ip": "192.0.2.10",
+            "vendor": "cisco",
+            "os": "ios",
+            "connection_type": "ssh",
+            "port": 22,
+            "username": "u",
+            "password": "p",
+        }
+    ]
+    inspector.load_devices(devices)
+
+    def boom(device: dict[str, Any]) -> dict[str, Any]:
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(inspector, "_inspect_device", boom)
+    monkeypatch.setattr(inspector, "_print_cli_status", lambda message: None)
+    monkeypatch.setattr(inspector, "_emit_status_event", lambda *args, **kwargs: None)
+
+    inspector.inspect_devices()
+    assert len(inspector.results) == 1
+    assert inspector.results[0]["status"] == "error"
+    assert "boom" in inspector.results[0]["error_message"]
+
+
+def test_test_tcping_supports_ipv6(inspector: NetworkInspector, monkeypatch) -> None:
+    captured: dict[str, object] = {}
+
+    class _FakeSocket:
+        def __init__(self, family: int, socktype: int, proto: int) -> None:
+            captured["family"] = family
+            captured["socktype"] = socktype
+            captured["proto"] = proto
+
+        def __enter__(self) -> "_FakeSocket":
+            return self
+
+        def __exit__(self, exc_type, exc, tb) -> bool:
+            return False
+
+        def settimeout(self, timeout: int) -> None:
+            captured["timeout"] = timeout
+
+        def connect_ex(self, sockaddr: object) -> int:
+            captured["sockaddr"] = sockaddr
+            return 0
+
+    monkeypatch.setattr(
+        "core.inspector.socket.getaddrinfo",
+        lambda ip, port, family, socktype: [
+            (
+                socket.AF_INET6,
+                socket.SOCK_STREAM,
+                0,
+                "",
+                ("2001:db8::1", port, 0, 0),
+            )
+        ],
+    )
+    monkeypatch.setattr(
+        "core.inspector.socket.socket",
+        lambda family, socktype, proto: _FakeSocket(family, socktype, proto),
+    )
+
+    assert inspector._test_tcping("2001:db8::1", 22, timeout=3) is True
+    assert captured["family"] == socket.AF_INET6
+
+
+def test_connect_to_device_returns_error_for_missing_password_env(
+    inspector: NetworkInspector, sample_device: dict[str, Any], monkeypatch
+) -> None:
+    device = dict(sample_device)
+    device["password"] = "env:NETOPS_MISSING_PASSWORD"
+    monkeypatch.setattr(inspector, "_test_tcping", lambda ip, port: True)
+    _, result = inspector._connect_to_device(
+        device,
+        inspection_mode=False,
+        backup_mode=False,
+    )
+    assert "error" in result
+    assert "NETOPS_MISSING_PASSWORD" in str(result["error"])

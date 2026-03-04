@@ -59,6 +59,7 @@ main:
     inspection: "点検"
     backup: "バックアップ"
     inspection_backup: "点検+バックアップ"
+    preflight: "事前チェック"
   run_summary:
     title: "実行サマリー"
     item: "項目"
@@ -131,6 +132,7 @@ menu:
     custom_commands: "コマンドファイル実行"
     settings: "設定"
     netmiko_types: "Netmiko device_type 一覧を表示"
+    preflight: "事前チェックを実行"
     exit: "終了"
   action:
     title: "タスク選択"
@@ -154,6 +156,7 @@ menu:
     timeout: "タイムアウト"
     max_workers: "同時実行数"
     language: "言語"
+    output_plugin: "出力形式"
     excludes: "点検除外"
     options_prompt: "設定:"
     change_log_level: "コンソールログレベルを変更"
@@ -161,6 +164,7 @@ menu:
     change_timeout: "タイムアウトを変更"
     change_workers: "同時実行数を変更"
     change_language: "言語を変更"
+    change_output_plugin: "出力形式を変更"
     manage_excludes: "点検除外を管理"
     back: "戻る"
     keep_current_hint: "現在値を保持するには Enter"
@@ -176,5 +180,7 @@ menu:
     workers_desc: "現在: {current}\n並列処理するデバイス数。"
     language_title: "言語"
     language_desc: "現在: {current}\nプロンプトと結果ラベルのUI言語。"
+    output_plugin_title: "出力形式"
+    output_plugin_desc: "現在: {current}\n結果ファイル形式を選択してください。"
   prompts:
     press_enter_back: "Enter を押して戻ります。"

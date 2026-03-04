@@ -9,6 +9,7 @@ Lee inventarios de dispositivos desde archivos Excel/CSV/JSON, se conecta por SS
 
 - Arquitectura multi-vendor (módulos en `vendors/`)
 - Modos de ejecución: Inspección / Respaldo / Inspección+Respaldo
+- Modo preflight (verificación de inventario/referencias de credenciales/TCP)
 - Ejecución por lotes de comandos personalizados desde TXT o Excel
 - Validación de inventario (campos obligatorios, IP duplicada, compatibilidad vendor/OS)
 - Control de reintentos y timeout para I/O de red
@@ -60,7 +61,8 @@ Menú principal:
 2. Ejecutar archivo de comandos personalizados
 3. Cambiar configuración
 4. Mostrar lista de `device_type` de Netmiko
-5. Salir
+5. Ejecutar preflight
+6. Salir
 
 ## Esquema de entrada de inventario
 
@@ -92,6 +94,12 @@ Columnas opcionales:
 - `username`
 - `enable_password`
 
+Sintaxis de referencia de credenciales (opcional):
+
+- `username`, `password`, `enable_password` pueden usar `env:NOMBRE_VARIABLE`
+- Ejemplo: `password: env:NETOPS_DEVICE_PASSWORD`
+- Si la variable de entorno está vacía/no existe, ese dispositivo falla de forma segura
+
 Ejemplo:
 
 | ip | vendor | os | connection_type | port | username | password | enable_password |
@@ -110,6 +118,7 @@ Claves comunes:
 - `timeout`: timeout de conexión (segundos)
 - `max_workers`: cantidad de workers en paralelo
 - `inspection_excludes`: mapa de exclusión de parsing por vendor/OS
+- `output_plugin`: `excel_results` | `json_results` | `csv_results`
 
 Claves de salida de inspección:
 
@@ -141,6 +150,8 @@ input_column_aliases:
 column_aliases:
   "host name": Hostname
   "cpu usage": CPU Usage
+
+output_plugin: excel_results
 ```
 
 ## i18n
@@ -196,6 +207,10 @@ Rutas generadas (con timestamp):
 
 - Resultados de inspección: `results/inspection_results_YYYYMMDD_HHMMSS.xlsx`
 - Resultados de comandos personalizados: `results/command_results_YYYYMMDD_HHMMSS.xlsx`
+- Resultados de preflight: `results/preflight_results_YYYYMMDD_HHMMSS.xlsx`
+- Salidas JSON/CSV cuando se selecciona `output_plugin`:
+  - `results/*_YYYYMMDD_HHMMSS.json`
+  - `results/*_YYYYMMDD_HHMMSS.csv`
 - Archivos de respaldo: `backup/YYYYMMDD_HHMMSS/[IP]_[vendor]_[os].txt`
 - Logs de ejecución: `logs/netops_inspector_YYYYMMDD_HHMMSS.log`
 - Logs de sesión: `session_logs/YYYYMMDD_HHMMSS/[IP]_[vendor]_[os].log`

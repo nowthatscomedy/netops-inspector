@@ -5,7 +5,7 @@ Cisco 장비의 명령어, 파싱 규칙, 핸들러 클래스를 제공합니다
 지원 OS: ios, ios-xe, legacy
 """
 
-import telnetlib
+from netmiko._telnetlib import telnetlib
 import time
 import logging
 import re

@@ -9,6 +9,7 @@ It reads device inventories from Excel/CSV/JSON files, connects via SSH/Telnet, 
 
 - Multi-vendor architecture (`vendors/` modules)
 - Inspection / Backup / Inspection+Backup execution modes
+- Preflight mode (inventory + credential reference + TCP reachability check)
 - Batch custom command execution from TXT or Excel files
 - Inventory input validation (required fields, duplicate IP, vendor/OS compatibility)
 - Retry and timeout controls for network I/O
@@ -60,7 +61,8 @@ Main menu:
 2. Run custom command file
 3. Change settings
 4. Show Netmiko `device_type` list
-5. Exit
+5. Run preflight check
+6. Exit
 
 ## Inventory Input Schema
 
@@ -92,6 +94,12 @@ Optional columns:
 - `username`
 - `enable_password`
 
+Credential reference syntax (optional):
+
+- `username`, `password`, `enable_password` may use `env:ENV_VAR_NAME`
+- Example: `password: env:NETOPS_DEVICE_PASSWORD`
+- If the referenced environment variable is missing/empty, the device is marked as failed safely
+
 Example:
 
 | ip | vendor | os | connection_type | port | username | password | enable_password |
@@ -110,6 +118,7 @@ Common keys:
 - `timeout`: connect timeout (seconds)
 - `max_workers`: parallel worker count
 - `inspection_excludes`: per vendor/OS parse exclusion map
+- `output_plugin`: `excel_results` | `json_results` | `csv_results`
 
 Inspection output keys:
 
@@ -141,6 +150,8 @@ input_column_aliases:
 column_aliases:
   "host name": Hostname
   "cpu usage": CPU Usage
+
+output_plugin: excel_results
 ```
 
 ## i18n
@@ -200,6 +211,10 @@ Generated paths (timestamped):
 
 - Inspection results: `results/inspection_results_YYYYMMDD_HHMMSS.xlsx`
 - Custom command results: `results/command_results_YYYYMMDD_HHMMSS.xlsx`
+- Preflight results: `results/preflight_results_YYYYMMDD_HHMMSS.xlsx`
+- JSON/CSV outputs when selected via `output_plugin`:
+  - `results/*_YYYYMMDD_HHMMSS.json`
+  - `results/*_YYYYMMDD_HHMMSS.csv`
 - Backup files: `backup/YYYYMMDD_HHMMSS/[IP]_[vendor]_[os].txt`
 - Run logs: `logs/netops_inspector_YYYYMMDD_HHMMSS.log`
 - Session logs: `session_logs/YYYYMMDD_HHMMSS/[IP]_[vendor]_[os].log`

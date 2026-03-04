@@ -9,6 +9,7 @@ Excel/CSV/JSON の機器インベントリを読み込み、SSH/Telnet で接続
 
 - マルチベンダー構成（`vendors/` モジュール）
 - 点検 / バックアップ / 点検+バックアップ 実行モード
+- 事前チェック（preflight）モード（インベントリ/資格情報参照/TCP到達性チェック）
 - TXT または Excel のカスタムコマンド一括実行
 - インベントリ入力検証（必須項目、重複 IP、vendor/OS 互換性）
 - ネットワーク I/O のリトライ・タイムアウト制御
@@ -60,7 +61,8 @@ python main.py
 2. カスタムコマンドファイル実行
 3. 設定変更
 4. Netmiko `device_type` 一覧表示
-5. 終了
+5. 事前チェック実行
+6. 終了
 
 ## インベントリ入力スキーマ
 
@@ -92,6 +94,12 @@ python main.py
 - `username`
 - `enable_password`
 
+資格情報参照構文（任意）:
+
+- `username`, `password`, `enable_password` に `env:環境変数名` を指定可能
+- 例: `password: env:NETOPS_DEVICE_PASSWORD`
+- 参照先の環境変数が未設定/空の場合、そのデバイスは安全に失敗扱い
+
 例:
 
 | ip | vendor | os | connection_type | port | username | password | enable_password |
@@ -110,6 +118,7 @@ python main.py
 - `timeout`: 接続タイムアウト（秒）
 - `max_workers`: 並列ワーカー数
 - `inspection_excludes`: ベンダー/OS ごとの解析除外マップ
+- `output_plugin`: `excel_results` | `json_results` | `csv_results`
 
 点検出力キー:
 
@@ -141,6 +150,8 @@ input_column_aliases:
 column_aliases:
   "host name": Hostname
   "cpu usage": CPU Usage
+
+output_plugin: excel_results
 ```
 
 ## i18n
@@ -196,6 +207,10 @@ Python コードを変更せずにコマンド/パーサーを拡張できます
 
 - 点検結果: `results/inspection_results_YYYYMMDD_HHMMSS.xlsx`
 - カスタムコマンド結果: `results/command_results_YYYYMMDD_HHMMSS.xlsx`
+- 事前チェック結果: `results/preflight_results_YYYYMMDD_HHMMSS.xlsx`
+- `output_plugin` 選択時の JSON/CSV 出力:
+  - `results/*_YYYYMMDD_HHMMSS.json`
+  - `results/*_YYYYMMDD_HHMMSS.csv`
 - バックアップファイル: `backup/YYYYMMDD_HHMMSS/[IP]_[vendor]_[os].txt`
 - 実行ログ: `logs/netops_inspector_YYYYMMDD_HHMMSS.log`
 - セッションログ: `session_logs/YYYYMMDD_HHMMSS/[IP]_[vendor]_[os].log`
