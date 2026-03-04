@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import json
 import logging
 from collections.abc import Callable
+from pathlib import Path
 from typing import Any
 from zipfile import BadZipFile
 
@@ -28,7 +30,10 @@ from core.validator import validate_dataframe
 
 logger = logging.getLogger(__name__)
 
-LEGACY_INVENTORY_PLUGIN = "excel_cli"
+EXCEL_INVENTORY_PLUGIN = "excel_cli"
+CSV_INVENTORY_PLUGIN = "csv_cli"
+JSON_INVENTORY_PLUGIN = "json_cli"
+LEGACY_INVENTORY_PLUGIN = EXCEL_INVENTORY_PLUGIN
 LEGACY_TASK_PLUGIN = "legacy_network_task"
 LEGACY_OUTPUT_PLUGIN = "excel_results"
 
@@ -57,7 +62,7 @@ def _default_inspector_factory(
 
 
 class ExcelCliInventoryPlugin:
-    name = LEGACY_INVENTORY_PLUGIN
+    name = EXCEL_INVENTORY_PLUGIN
 
     def __init__(
         self,
@@ -93,7 +98,7 @@ class ExcelCliInventoryPlugin:
         settings: AppSettings,
         options: dict[str, Any] | None = None,
     ) -> InventoryPayload:
-        filepath = self._filepath_provider()
+        filepath = str((options or {}).get("filepath", "")).strip() or self._filepath_provider()
         if not filepath:
             raise InventoryLoadError(t("main.warning.input_path_missing"))
 
@@ -101,6 +106,103 @@ class ExcelCliInventoryPlugin:
         if devices_df is None:
             raise InventoryLoadError(t("main.warning.encrypted_excel_read_failed", error="n/a"))
 
+        devices_df = self._dataframe_validator(devices_df, settings.input_column_aliases)
+        devices = devices_df.to_dict("records")
+        return InventoryPayload(
+            source=self.name,
+            filepath=filepath,
+            devices=devices,
+            metadata={"device_count": len(devices)},
+        )
+
+
+class CsvCliInventoryPlugin:
+    name = CSV_INVENTORY_PLUGIN
+
+    def __init__(
+        self,
+        *,
+        filepath_provider: Callable[[], str | None] = get_filepath_from_cli,
+        csv_reader: Callable[[str], pd.DataFrame] = pd.read_csv,
+        dataframe_validator: Callable[[pd.DataFrame, dict[str, str] | None], pd.DataFrame]
+        = validate_dataframe,
+    ) -> None:
+        self._filepath_provider = filepath_provider
+        self._csv_reader = csv_reader
+        self._dataframe_validator = dataframe_validator
+
+    def load(
+        self,
+        *,
+        settings: AppSettings,
+        options: dict[str, Any] | None = None,
+    ) -> InventoryPayload:
+        filepath = str((options or {}).get("filepath", "")).strip() or self._filepath_provider()
+        if not filepath:
+            raise InventoryLoadError(t("main.warning.input_path_missing"))
+
+        try:
+            devices_df = self._csv_reader(filepath)
+        except Exception as exc:
+            raise InventoryLoadError(str(exc)) from exc
+
+        devices_df = self._dataframe_validator(devices_df, settings.input_column_aliases)
+        devices = devices_df.to_dict("records")
+        return InventoryPayload(
+            source=self.name,
+            filepath=filepath,
+            devices=devices,
+            metadata={"device_count": len(devices)},
+        )
+
+
+class JsonCliInventoryPlugin:
+    name = JSON_INVENTORY_PLUGIN
+
+    def __init__(
+        self,
+        *,
+        filepath_provider: Callable[[], str | None] = get_filepath_from_cli,
+        json_loader: Callable[[str], Any] | None = None,
+        dataframe_validator: Callable[[pd.DataFrame, dict[str, str] | None], pd.DataFrame]
+        = validate_dataframe,
+    ) -> None:
+        self._filepath_provider = filepath_provider
+        self._json_loader = json_loader
+        self._dataframe_validator = dataframe_validator
+
+    def _load_json_data(self, filepath: str) -> Any:
+        if self._json_loader is not None:
+            return self._json_loader(filepath)
+        raw = Path(filepath).read_text(encoding="utf-8")
+        return json.loads(raw)
+
+    def load(
+        self,
+        *,
+        settings: AppSettings,
+        options: dict[str, Any] | None = None,
+    ) -> InventoryPayload:
+        filepath = str((options or {}).get("filepath", "")).strip() or self._filepath_provider()
+        if not filepath:
+            raise InventoryLoadError(t("main.warning.input_path_missing"))
+
+        try:
+            payload = self._load_json_data(filepath)
+        except Exception as exc:
+            raise InventoryLoadError(str(exc)) from exc
+
+        if isinstance(payload, dict):
+            records = payload.get("devices")
+        else:
+            records = payload
+
+        if not isinstance(records, list):
+            raise InventoryLoadError(
+                "JSON inventory must be a list of device objects or an object with 'devices'.",
+            )
+
+        devices_df = pd.DataFrame(records)
         devices_df = self._dataframe_validator(devices_df, settings.input_column_aliases)
         devices = devices_df.to_dict("records")
         return InventoryPayload(
@@ -226,6 +328,8 @@ class ExcelResultOutputPlugin:
 def build_legacy_plugin_runtime() -> PluginRuntime:
     registry = PluginRegistry()
     registry.register_inventory(ExcelCliInventoryPlugin())
+    registry.register_inventory(CsvCliInventoryPlugin())
+    registry.register_inventory(JsonCliInventoryPlugin())
     registry.register_task(LegacyNetworkTaskPlugin())
     registry.register_output(ExcelResultOutputPlugin())
     return PluginRuntime(registry)

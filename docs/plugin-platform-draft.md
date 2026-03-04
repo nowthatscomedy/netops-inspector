@@ -22,6 +22,8 @@ This draft introduces a plugin-oriented execution model without breaking existin
 - `core/plugin_platform/legacy.py`
   - Legacy-compatible plugins:
     - `excel_cli` inventory
+    - `csv_cli` inventory
+    - `json_cli` inventory
     - `legacy_network_task` task
     - `excel_results` output
 
@@ -29,7 +31,7 @@ This draft introduces a plugin-oriented execution model without breaking existin
 
 Current `main.py` now follows:
 
-1. `load_inventory(excel_cli)`
+1. `load_inventory(<plugin by file extension>)`
 2. `run_task(legacy_network_task)`
 3. `write_output(excel_results)`
 
@@ -42,13 +44,13 @@ The old user-visible behavior is still preserved:
 ## Why This Is a Draft
 
 - Task plugin still wraps `NetworkInspector` directly (legacy adapter).
-- Only one inventory plugin and one output plugin are provided.
-- Plugin selection is static in code (no user-selectable backend yet).
+- Output is still fixed to Excel.
+- Plugin selection is currently extension-based (`.xlsx/.xls/.xlsm`, `.csv`, `.json`).
 
 ## Next Migration Steps
 
 1. Add plugin selection in `settings.yaml` (`inventory_plugin`, `task_plugin`, `output_plugin`).
-2. Add `json` output plugin and `csv` inventory plugin.
+2. Add `json` output plugin (inventory side is already available for `csv/json`).
 3. Split legacy task plugin into dedicated task plugins:
    - `inspection_task`
    - `backup_task`

@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 from collections.abc import Callable
 from datetime import datetime
+from pathlib import Path
 from zipfile import BadZipFile
 
 import pandas as pd
@@ -10,7 +11,7 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
 
-from core.cli_input import get_command_filepath_from_cli
+from core.cli_input import get_command_filepath_from_cli, get_filepath_from_cli
 from core.custom_exceptions import NetworkInspectorError
 from core.file_handler import read_command_file, read_excel_file
 from core.i18n import set_locale, t
@@ -24,7 +25,9 @@ from core.menu_i18n import (
     show_settings_menu,
 )
 from core.plugin_platform import (
-    LEGACY_INVENTORY_PLUGIN,
+    CSV_INVENTORY_PLUGIN,
+    EXCEL_INVENTORY_PLUGIN,
+    JSON_INVENTORY_PLUGIN,
     LEGACY_OUTPUT_PLUGIN,
     LEGACY_TASK_PLUGIN,
     InventoryLoadError,
@@ -141,6 +144,29 @@ def _print_result_summary(task_result: TaskResult, log_file: str) -> None:
     input(t("main.prompts.return_main_menu"))
 
 
+def _inventory_plugin_for_filepath(filepath: str) -> str:
+    suffix = Path(filepath).suffix.lower()
+    if suffix in (".xlsx", ".xls", ".xlsm"):
+        return EXCEL_INVENTORY_PLUGIN
+    if suffix == ".csv":
+        return CSV_INVENTORY_PLUGIN
+    if suffix == ".json":
+        return JSON_INVENTORY_PLUGIN
+    raise InventoryLoadError(t("file_handler.error.unsupported_extension", suffix=suffix or filepath))
+
+
+def _load_inventory_payload(settings: AppSettings):
+    filepath = get_filepath_from_cli()
+    if not filepath:
+        raise InventoryLoadError(t("main.warning.input_path_missing"))
+    plugin_name = _inventory_plugin_for_filepath(filepath)
+    return _PLUGIN_RUNTIME.load_inventory(
+        plugin_name,
+        settings=settings,
+        options={"filepath": filepath},
+    )
+
+
 def _run_custom_commands(settings: AppSettings) -> None:
     run_timestamp, log_file = _init_run(settings)
     output_excel = "command_results.xlsx"
@@ -152,10 +178,7 @@ def _run_custom_commands(settings: AppSettings) -> None:
     logger.info(t("main.info.mode_log_prefix", mode=mode_label))
 
     try:
-        inventory_payload = _PLUGIN_RUNTIME.load_inventory(
-            LEGACY_INVENTORY_PLUGIN,
-            settings=settings,
-        )
+        inventory_payload = _load_inventory_payload(settings)
     except InventoryLoadError as exc:
         logger.warning("%s", exc)
         return
@@ -258,10 +281,7 @@ def _run_inspection_backup(settings: AppSettings) -> None:
     logger.info(t("main.info.mode_log_prefix", mode=mode_label))
 
     try:
-        inventory_payload = _PLUGIN_RUNTIME.load_inventory(
-            LEGACY_INVENTORY_PLUGIN,
-            settings=settings,
-        )
+        inventory_payload = _load_inventory_payload(settings)
     except InventoryLoadError as exc:
         logger.warning("%s", exc)
         return

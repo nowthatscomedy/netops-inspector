@@ -1,10 +1,17 @@
 from __future__ import annotations
 
 import re
+from pathlib import Path
 
 import pandas as pd
+import pytest
 
 import main
+from core.plugin_platform import (
+    CSV_INVENTORY_PLUGIN,
+    EXCEL_INVENTORY_PLUGIN,
+    JSON_INVENTORY_PLUGIN,
+)
 from core.settings import AppSettings
 
 
@@ -76,3 +83,22 @@ def test_init_run_returns_timestamp_and_logfile(monkeypatch) -> None:
     run_timestamp, log_file = main._init_run(settings)
     assert re.fullmatch(r"\d{8}_\d{6}", run_timestamp) is not None
     assert log_file == "logs/test.log"
+
+
+@pytest.mark.parametrize(
+    ("filepath", "plugin_name"),
+    [
+        ("devices.xlsx", EXCEL_INVENTORY_PLUGIN),
+        ("devices.xls", EXCEL_INVENTORY_PLUGIN),
+        ("devices.xlsm", EXCEL_INVENTORY_PLUGIN),
+        ("devices.csv", CSV_INVENTORY_PLUGIN),
+        ("devices.json", JSON_INVENTORY_PLUGIN),
+    ],
+)
+def test_inventory_plugin_for_filepath(filepath: str, plugin_name: str) -> None:
+    assert main._inventory_plugin_for_filepath(filepath) == plugin_name
+
+
+def test_inventory_plugin_for_filepath_raises_on_unsupported_extension() -> None:
+    with pytest.raises(main.InventoryLoadError):
+        main._inventory_plugin_for_filepath(str(Path("devices.txt")))

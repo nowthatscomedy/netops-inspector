@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -13,9 +14,14 @@ from core.plugin_platform.contracts import (
     TaskResult,
 )
 from core.plugin_platform.legacy import (
+    CSV_INVENTORY_PLUGIN,
+    JSON_INVENTORY_PLUGIN,
+    CsvCliInventoryPlugin,
     ExcelCliInventoryPlugin,
     ExcelResultOutputPlugin,
+    JsonCliInventoryPlugin,
     LegacyNetworkTaskPlugin,
+    build_legacy_plugin_runtime,
 )
 from core.plugin_platform.registry import PluginRegistry
 from core.settings import AppSettings
@@ -69,6 +75,123 @@ def test_excel_cli_inventory_plugin_raises_when_filepath_missing() -> None:
     )
     with pytest.raises(InventoryLoadError):
         plugin.load(settings=AppSettings())
+
+
+def test_csv_cli_inventory_plugin_loads_from_filepath_option(tmp_path) -> None:
+    csv_path = tmp_path / "devices.csv"
+    csv_path.write_text(
+        "ip,vendor,os,connection_type,port,password\n"
+        "192.0.2.20,cisco,ios,ssh,22,pw\n",
+        encoding="utf-8",
+    )
+    plugin = CsvCliInventoryPlugin(
+        filepath_provider=lambda: None,
+        dataframe_validator=lambda frame, _: frame,
+    )
+    payload = plugin.load(
+        settings=AppSettings(),
+        options={"filepath": str(csv_path)},
+    )
+    assert payload.filepath == str(csv_path)
+    assert payload.devices[0]["ip"] == "192.0.2.20"
+
+
+def test_json_cli_inventory_plugin_loads_list_from_filepath_option(tmp_path) -> None:
+    json_path = tmp_path / "devices.json"
+    json_path.write_text(
+        json.dumps(
+            [
+                {
+                    "ip": "192.0.2.30",
+                    "vendor": "cisco",
+                    "os": "ios",
+                    "connection_type": "ssh",
+                    "port": 22,
+                    "password": "pw",
+                }
+            ]
+        ),
+        encoding="utf-8",
+    )
+    plugin = JsonCliInventoryPlugin(
+        filepath_provider=lambda: None,
+        dataframe_validator=lambda frame, _: frame,
+    )
+    payload = plugin.load(
+        settings=AppSettings(),
+        options={"filepath": str(json_path)},
+    )
+    assert payload.filepath == str(json_path)
+    assert payload.devices[0]["ip"] == "192.0.2.30"
+
+
+def test_json_cli_inventory_plugin_loads_dict_with_devices_key(tmp_path) -> None:
+    json_path = tmp_path / "devices.json"
+    json_path.write_text(
+        json.dumps(
+            {
+                "devices": [
+                    {
+                        "ip": "192.0.2.31",
+                        "vendor": "cisco",
+                        "os": "ios",
+                        "connection_type": "ssh",
+                        "port": 22,
+                        "password": "pw",
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    plugin = JsonCliInventoryPlugin(
+        filepath_provider=lambda: None,
+        dataframe_validator=lambda frame, _: frame,
+    )
+    payload = plugin.load(
+        settings=AppSettings(),
+        options={"filepath": str(json_path)},
+    )
+    assert payload.devices[0]["ip"] == "192.0.2.31"
+
+
+def test_runtime_registers_csv_and_json_inventory_plugins(tmp_path) -> None:
+    runtime = build_legacy_plugin_runtime()
+    csv_path = tmp_path / "devices.csv"
+    csv_path.write_text(
+        "ip,vendor,os,connection_type,port,password\n"
+        "192.0.2.50,cisco,ios,ssh,22,pw\n",
+        encoding="utf-8",
+    )
+    json_path = tmp_path / "devices.json"
+    json_path.write_text(
+        json.dumps(
+            [
+                {
+                    "ip": "192.0.2.51",
+                    "vendor": "cisco",
+                    "os": "ios",
+                    "connection_type": "ssh",
+                    "port": 22,
+                    "password": "pw",
+                }
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    csv_payload = runtime.load_inventory(
+        CSV_INVENTORY_PLUGIN,
+        settings=AppSettings(),
+        options={"filepath": str(csv_path)},
+    )
+    json_payload = runtime.load_inventory(
+        JSON_INVENTORY_PLUGIN,
+        settings=AppSettings(),
+        options={"filepath": str(json_path)},
+    )
+    assert csv_payload.devices[0]["ip"] == "192.0.2.50"
+    assert json_payload.devices[0]["ip"] == "192.0.2.51"
 
 
 @dataclass
