@@ -2,31 +2,136 @@
 
 Language: [English](../README.md) | [한국어](README.ko.md) | [日本語](README.ja.md) | [Español](README.es.md) | [Português (Brasil)](README.pt-BR.md) | [简体中文](README.zh-CN.md)
 
-NetOps Inspector é uma ferramenta CLI para inspeção e backup de dispositivos de rede multi-vendor.
-Ela lê inventários em Excel, conecta via SSH/Telnet e gera planilhas de resultado.
+NetOps Inspector é uma ferramenta CLI para inspeção de dispositivos de rede multi-vendor e backup de configuração.
+Ela lê inventários de dispositivos em Excel, conecta via SSH/Telnet, executa comandos de inspeção, faz parsing das saídas e gera planilhas de resultado.
 
-## Recursos principais
+## Principais recursos
 
-- Arquitetura multi-vendor (`vendors/`)
-- Modos: inspeção / backup / inspeção+backup
-- Execução em lote de comandos personalizados (TXT/Excel)
+- Arquitetura multi-vendor (módulos em `vendors/`)
+- Modos de execução: Inspeção / Backup / Inspeção+Backup
+- Execução em lote de comandos personalizados a partir de TXT ou Excel
 - Validação de entrada Excel (campos obrigatórios, IP duplicado, compatibilidade vendor/OS)
-- Controle de retry, timeout e concorrência
-- Dashboard TUI em tempo real
-- Logs de sessão por dispositivo
-- Extensão via `custom_rules.yaml`
-- UI multilíngue (`en`, `ko`, `ja`, `es`, `pt-BR`, `zh-CN`)
+- Controle de retry e timeout para I/O de rede
+- Dashboard de terminal em tempo real durante a execução
+- Arquivos de log de sessão por dispositivo
+- Geração de planilha de resultados com alias/ordem de colunas configurável
+- Extensões de parsing e comandos definidas pelo usuário via `custom_rules.yaml`
+- UI/mensagens com i18n (`en`, `ko`, `ja`, `es`, `pt-BR`, `zh-CN`)
 
-## Início rápido
+## Vendors suportados (módulos atuais)
+
+- `alcatel-lucent`
+- `aruba`
+- `axgate`
+- `cisco`
+- `dayou`
+- `handreamnet`
+- `juniper`
+- `nexg`
+- `piolink`
+- `ruckus`
+- `ubiquoss`
+
+Os valores de OS suportados dependem de cada módulo de vendor e dos mapas de comando em `vendors/__init__.py`.
+
+## Requisitos
+
+- Python 3.10+
+- Conectividade de rede com os dispositivos alvo
+- Dependências em `requirements.txt`
+
+Instalação:
 
 ```bash
 pip install -r requirements.txt
+```
+
+## Início rápido
+
+Execute:
+
+```bash
 python main.py
+```
+
+Menu principal:
+
+1. Iniciar inspeção/backup
+2. Executar arquivo de comandos personalizados
+3. Alterar configurações
+4. Mostrar lista de `device_type` do Netmiko
+5. Sair
+
+## Esquema de entrada Excel
+
+Colunas obrigatórias:
+
+- `ip`
+- `vendor`
+- `os`
+- `connection_type` (`ssh` ou `telnet`)
+- `port`
+- `password`
+
+Colunas opcionais:
+
+- `username`
+- `enable_password`
+
+Exemplo:
+
+| ip | vendor | os | connection_type | port | username | password | enable_password |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| 192.168.1.10 | cisco | ios | ssh | 22 | admin | ****** | ****** |
+| 192.168.1.20 | ruckus | icx | ssh | 22 | super | ****** | |
+
+## Configurações (`settings.yaml`)
+
+O arquivo é criado automaticamente no diretório da aplicação quando não existe.
+
+Chaves comuns:
+
+- `console_log_level`: `CRITICAL`/`ERROR`/`WARNING`/`INFO`/`DEBUG`
+- `max_retries`: máximo de tentativas de conexão
+- `timeout`: timeout de conexão (segundos)
+- `max_workers`: número de workers em paralelo
+- `inspection_excludes`: mapa de exclusão de parsing por vendor/OS
+
+Chaves de saída de inspeção:
+
+- `column_aliases`: normaliza nomes de colunas de inspeção
+- `inspection_column_order_global`
+- `inspection_column_order_by_profile`
+
+Chaves de i18n:
+
+- `language`
+- `fallback_language`
+- `input_column_aliases`
+
+Exemplo:
+
+```yaml
+language: en
+fallback_language: en
+console_log_level: WARNING
+max_retries: 3
+timeout: 10
+max_workers: 10
+
+input_column_aliases:
+  "ip address": ip
+  "vendor name": vendor
+  "connection type": connection_type
+
+column_aliases:
+  "host name": Hostname
+  "cpu usage": CPU Usage
 ```
 
 ## i18n
 
-Códigos suportados:
+Códigos de idioma aceitos atualmente:
 
 - `en`
 - `ko`
@@ -35,7 +140,7 @@ Códigos suportados:
 - `pt-BR`
 - `zh-CN`
 
-Arquivos de tradução:
+Arquivos de tradução incluídos:
 
 - `locales/en.yaml`
 - `locales/ko.yaml`
@@ -43,3 +148,66 @@ Arquivos de tradução:
 - `locales/es.yaml`
 - `locales/pt-BR.yaml`
 - `locales/zh-CN.yaml`
+
+Códigos de idioma não suportados são normalizados para `en`.
+Se faltar o arquivo de locale ou uma chave de tradução, as mensagens caem para `fallback_language` e depois para inglês.
+
+## README multilíngue
+
+- Korean: `docs/README.ko.md`
+- Japanese: `docs/README.ja.md`
+- Spanish: `docs/README.es.md`
+- Portuguese (Brazil): `docs/README.pt-BR.md`
+- Simplified Chinese: `docs/README.zh-CN.md`
+
+## Regras customizadas (`custom_rules.yaml`)
+
+Você pode estender comandos/parsers sem alterar código Python.
+
+Seções de nível superior:
+
+- `inspection_commands`
+- `backup_commands`
+- `parsing_rules`
+- `connection_overrides`
+- `handler_overrides`
+
+Arquivo template:
+
+- `custom_rules.example.yaml`
+
+## Saídas
+
+Caminhos gerados (com timestamp):
+
+- Resultados de inspeção: `results/inspection_results_YYYYMMDD_HHMMSS.xlsx`
+- Resultados de comandos personalizados: `results/command_results_YYYYMMDD_HHMMSS.xlsx`
+- Arquivos de backup: `backup/YYYYMMDD_HHMMSS/[IP]_[vendor]_[os].txt`
+- Logs de execução: `logs/netops_inspector_YYYYMMDD_HHMMSS.log`
+- Logs de sessão: `session_logs/YYYYMMDD_HHMMSS/[IP]_[vendor]_[os].log`
+
+## Testes
+
+```bash
+python -m pytest
+```
+
+## Build (Windows)
+
+Uso:
+
+```bat
+build.bat
+```
+
+O script espera `NetOpsInspector.spec` na raiz do repositório.
+
+## Notas de segurança
+
+- Não faça hardcode de credenciais nos arquivos-fonte.
+- Prefira variáveis de ambiente ou entrega segura de segredos em runtime.
+- Trate logs exportados e arquivos de resultados como dados operacionais sensíveis.
+
+## Licença
+
+MIT License
