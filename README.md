@@ -233,8 +233,6 @@ Use:
 build.bat
 ```
 
-The script runs PyInstaller directly from `main.py` and does not require `NetOpsInspector.spec`.
-
 ## Security Notes
 
 - Do not hardcode credentials in source files.

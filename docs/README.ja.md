@@ -233,8 +233,6 @@ python -m pytest
 build.bat
 ```
 
-このスクリプトは `main.py` を直接対象に PyInstaller を実行するため、`NetOpsInspector.spec` は不要です。
-
 ## セキュリティ注意事項
 
 - ソースコードに認証情報をハードコードしないでください。

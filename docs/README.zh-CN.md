@@ -233,8 +233,6 @@ python -m pytest
 build.bat
 ```
 
-脚本会直接基于 `main.py` 执行 PyInstaller，不需要 `NetOpsInspector.spec`。
-
 ## 安全说明
 
 - 不要在源码中硬编码凭据。
