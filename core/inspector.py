@@ -947,7 +947,7 @@ class NetworkInspector:
         self._print_cli_status(f"사용자 명령 실행 완료 (성공 {success_count} / 실패 {fail_count})")
             
     def inspect_and_backup_devices(self):
-        """네트워크 장비를 점검/백업 독립 연결로 파이프라인 실행합니다."""
+        """네트워크 장비를 단일 연결로 점검 후 백업합니다."""
         self.logger.info("장비 점검 및 백업 시작")
         self._print_cli_status("장비 점검 및 백업을 시작합니다.")
         total_devices = len(self.devices)
@@ -983,112 +983,53 @@ class NetworkInspector:
                     "성공" if success else "실패"
                 )
 
-        with ThreadPoolExecutor(max_workers=self.max_workers) as inspect_executor, ThreadPoolExecutor(
-            max_workers=self.max_workers
-        ) as backup_executor:
-            inspect_futures = {
-                inspect_executor.submit(self._inspect_device, device, "inspect"): device
+        with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
+            futures = {
+                executor.submit(
+                    self._inspect_and_backup_device,
+                    device,
+                    on_inspection_done,
+                    on_backup_done,
+                ): device
                 for device in self.devices
             }
-            backup_futures: dict = {}
 
-            for future in as_completed(inspect_futures):
-                device = inspect_futures[future]
+            for future in as_completed(futures):
+                device = futures[future]
                 ip = device['ip']
                 try:
-                    inspect_result = future.result()
+                    result = future.result()
                 except Exception as e:
-                    self.logger.error("점검 처리 중 오류: %s - %s", ip, e)
-                    inspect_result = {
+                    self.logger.error("점검+백업 처리 중 오류: %s - %s", ip, e)
+                    result = {
                         'ip': ip,
                         'vendor': device['vendor'],
                         'os': device['os'],
                         'status': 'error',
                         'error_message': str(e),
                         'inspection_results': {},
+                        'backup_file': '',
+                        '_elapsed_seconds': 0,
                     }
 
-                combined_result = {
+                combined_results[ip] = {
                     'ip': ip,
-                    'vendor': device['vendor'],
-                    'os': device['os'],
-                    'status': inspect_result.get('status', 'success'),
-                    'error_message': inspect_result.get('error_message', ''),
-                    'inspection_results': inspect_result.get('inspection_results', {}),
-                    'backup_file': '',
-                    '_inspect_elapsed': inspect_result.get('_elapsed_seconds', 0),
+                    'vendor': result.get('vendor', device['vendor']),
+                    'os': result.get('os', device['os']),
+                    'status': result.get('status', 'success'),
+                    'error_message': result.get('error_message', ''),
+                    'inspection_results': result.get('inspection_results', {}),
+                    'backup_file': result.get('backup_file', ''),
                 }
-                combined_results[ip] = combined_result
 
-                inspection_success = combined_result['status'] != 'error'
-                if inspection_success:
-                    on_inspection_done(ip, True)
-                    self._print_cli_status(f"[점검완료] {ip}: 백업 대기열 추가")
-                    backup_future = backup_executor.submit(self._backup_device, device, "backup")
-                    backup_futures[backup_future] = device
-                else:
-                    on_inspection_done(ip, False)
-                    self._emit_status_event(
-                        "device_complete", success=False, ip=ip,
-                        vendor=device.get('vendor', ''),
-                        os=device.get('os', ''),
-                        elapsed_seconds=inspect_result.get('_elapsed_seconds', 0),
-                    )
-
-            for future in as_completed(backup_futures):
-                device = backup_futures[future]
-                ip = device['ip']
-                try:
-                    backup_result = future.result()
-                except Exception as e:
-                    self.logger.error("백업 처리 중 오류: %s - %s", ip, e)
-                    backup_result = {
-                        'ip': ip,
-                        'status': 'error',
-                        'error_message': str(e),
-                        'backup_file': '',
-                    }
-
-                current = combined_results.get(ip)
-                if current is None:
-                    current = {
-                        'ip': ip,
-                        'vendor': device['vendor'],
-                        'os': device['os'],
-                        'status': 'success',
-                        'error_message': '',
-                        'inspection_results': {},
-                        'backup_file': '',
-                    }
-                    combined_results[ip] = current
-
-                bkup_elapsed = backup_result.get('_elapsed_seconds', 0) if isinstance(backup_result, dict) else 0
-                insp_elapsed = combined_results.get(ip, {}).get('_inspect_elapsed', 0)
-                total_elapsed = insp_elapsed + bkup_elapsed
-
-                if backup_result.get('status') == 'error':
-                    backup_error = backup_result.get('error_message', '백업 실패')
-                    current['status'] = 'error'
-                    if current.get('error_message'):
-                        current['error_message'] = f"{current['error_message']} | 백업: {backup_error}"
-                    else:
-                        current['error_message'] = f"백업: {backup_error}"
-                    on_backup_done(ip, False)
-                    self._emit_status_event(
-                        "device_complete", success=False, ip=ip,
-                        vendor=device.get('vendor', ''),
-                        os=device.get('os', ''),
-                        elapsed_seconds=total_elapsed,
-                    )
-                else:
-                    current['backup_file'] = backup_result.get('backup_file', '')
-                    on_backup_done(ip, True)
-                    self._emit_status_event(
-                        "device_complete", success=True, ip=ip,
-                        vendor=device.get('vendor', ''),
-                        os=device.get('os', ''),
-                        elapsed_seconds=total_elapsed,
-                    )
+                self._emit_status_event(
+                    "device_complete",
+                    success=result.get('status') != 'error',
+                    ip=ip,
+                    vendor=device.get('vendor', ''),
+                    os=device.get('os', ''),
+                    elapsed_seconds=result.get('_elapsed_seconds', 0),
+                )
 
         with self.results_lock:
             device_order = {d['ip']: i for i, d in enumerate(self.devices)}
@@ -1110,6 +1051,7 @@ class NetworkInspector:
         on_backup_done: Callable[[str, bool], None] | None = None,
     ) -> dict:
         """단일 SSH 연결로 점검 후 백업을 수행합니다."""
+        _start = time.monotonic()
         device_index = device.get('device_index', 'NA')
         threading.current_thread().name = f"Device-{device_index}"
         ip = device['ip']
@@ -1179,6 +1121,8 @@ class NetworkInspector:
             if not inspection_reported and on_inspection_done:
                 on_inspection_done(ip, False)
             return result
+        finally:
+            result['_elapsed_seconds'] = time.monotonic() - _start
 
     def _inspect_device(self, device: dict, session_log_suffix: str | None = None) -> dict:
         """단일 장비를 점검합니다."""

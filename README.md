@@ -186,6 +186,8 @@ Generated paths (timestamped):
 - Run logs: `logs/netops_inspector_YYYYMMDD_HHMMSS.log`
 - Session logs: `session_logs/YYYYMMDD_HHMMSS/[IP]_[vendor]_[os].log`
 
+In `inspection + backup` mode, each device uses a single connection for both steps to reduce reconnect-related failures.
+
 ## Testing
 
 ```bash

@@ -161,3 +161,57 @@ def test_inspect_devices_sorts_results_by_input_order(
 
     inspector.inspect_devices()
     assert [row["ip"] for row in inspector.results] == ["192.0.2.11", "192.0.2.10"]
+
+
+def test_inspect_and_backup_devices_uses_single_session_path_for_all_devices(
+    inspector: NetworkInspector, monkeypatch
+) -> None:
+    device = {
+        "ip": "192.0.2.21",
+        "vendor": "cisco",
+        "os": "ios",
+        "connection_type": "ssh",
+        "port": 22,
+        "username": "u",
+        "password": "p",
+    }
+    inspector.load_devices([device])
+
+    calls = {"combined": 0, "inspect": 0, "backup": 0}
+
+    def fake_combined(target: dict[str, Any], on_inspection_done=None, on_backup_done=None):
+        calls["combined"] += 1
+        if on_inspection_done:
+            on_inspection_done(target["ip"], True)
+        if on_backup_done:
+            on_backup_done(target["ip"], True)
+        return {
+            "ip": target["ip"],
+            "vendor": target["vendor"],
+            "os": target["os"],
+            "status": "success",
+            "error_message": "",
+            "inspection_results": {"Hostname": "sw1"},
+            "backup_file": "backup/sw1.txt",
+            "_elapsed_seconds": 0.25,
+        }
+
+    def fail_inspect(*args, **kwargs):
+        calls["inspect"] += 1
+        raise AssertionError("single-session device should not use split inspect path")
+
+    def fail_backup(*args, **kwargs):
+        calls["backup"] += 1
+        raise AssertionError("inspect_and_backup should not use split backup path")
+
+    monkeypatch.setattr(inspector, "_inspect_and_backup_device", fake_combined)
+    monkeypatch.setattr(inspector, "_inspect_device", fail_inspect)
+    monkeypatch.setattr(inspector, "_backup_device", fail_backup)
+    monkeypatch.setattr(inspector, "_print_cli_status", lambda message: None)
+    monkeypatch.setattr(inspector, "_emit_status_event", lambda *args, **kwargs: None)
+
+    inspector.inspect_and_backup_devices()
+
+    assert calls == {"combined": 1, "inspect": 0, "backup": 0}
+    assert inspector.results[0]["status"] == "success"
+    assert inspector.results[0]["backup_file"] == "backup/sw1.txt"
